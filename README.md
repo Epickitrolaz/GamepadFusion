@@ -1,0 +1,86 @@
+# Retroid Fusion Controller
+
+A Magisk module that merges **all connected gamepads** on an Android handheld
+into one virtual controller — the **Fusion Controller** — plus a small
+companion app for per-app control.
+
+Press "A" on *any* connected pad, and every app sees "A" pressed on the Fusion
+Controller. The virtual pad always enumerates as a standard Xbox-layout
+controller, so emulators, launchers and games only ever need one profile.
+
+Built and tested on a **Retroid Pocket 5** (internal pad + 8BitDo Ultimate 2C).
+
+## How it works
+
+`fusiond` (a static C daemon started at boot by the module) opens every
+`/dev/input/event*` node that looks like a gamepad, maintains a real-time union
+of all their button/axis states, and replays that state into a single
+`uinput` device named **Fusion Controller** (VID/PID `045e:028e`, Xbox One S
+identity — the most widely recognized pad in the Android ecosystem).
+
+## Features
+
+- **Merge everything**: internal + USB + Bluetooth pads fused into one device
+- **Standard Xbox identity** — every app sees the same controller, no per-app
+  controller profiles or double inputs
+- **Hide mode** — grabs physical pads per-app (e.g. RetroArch) so apps that
+  read all devices directly only see the Fusion pad; auto-applied at boot via
+  a foreground monitor (`fusion-monitor.sh` + `/data/adb/fusion-apps.conf`)
+- **Per-pad layout remapping** — Nintendo-layout pads get their A/B, X/Y
+  swapped to standard Xbox order in real time
+- **System key passthrough** — Back / Home / Menu / Volume keys survive the
+  merge (the RP5's back button works)
+- **Rumble merge** — force feedback from any pad is replayed to all pads
+- **Control socket** — live reconfiguration over a Unix socket, with the
+  `fusionctl` CLI and the FusionControl app as frontends
+
+## Install
+
+1. Flash the module zip from Releases in Magisk and reboot.
+2. (Optional) Install `FusionControl.apk` from Releases — toggle hide mode,
+   per-pad layouts and view connected pads from a normal app, no terminal.
+
+CLI quick reference (run as root):
+
+```sh
+fusionctl status                 # pads + fusion device state
+fusionctl hide 1                 # hide physical pads (grab) — for RetroArch etc.
+fusionctl layout 0 NINTENDO      # remap pad 0 to Nintendo layout
+```
+
+Details, config files and troubleshooting: [`module/README.md`](module/README.md)
+
+## Building from source
+
+**Module** — needs an aarch64 musl cross toolchain (musl.cc) and `zip`:
+
+```sh
+TC=/path/to/aarch64-linux-musl-cross ./module/build.sh
+# -> module/fusion_controller-vX.Y.Z.zip
+```
+
+**App** — needs an Android SDK (platform 34, build-tools 34) and JDK 17+:
+
+```sh
+ANDROID_SDK=/path/to/sdk JAVA_HOME=/path/to/jdk ./app/build_apk.sh
+# -> app/FusionControl.apk
+```
+
+## Repo layout
+
+```
+├── module/          Magisk module: fusiond.c daemon, installer, control CLI
+│   └── fusiond.c    the daemon (single-file C, no dependencies, static-linked)
+├── app/             FusionControl companion app (no-Gradle build: aapt2/javac/d8)
+├── module/README.md detailed usage, socket protocol, troubleshooting
+└── LICENSE          MIT
+```
+
+## Credits
+
+Inspired by [JoyMerge](https://github.com/mkturkcan/JoyMerge) (Joy-Con merging
+via uinput on Android). Related quirk thread on Retroid controller device IDs.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -1,0 +1,17 @@
+# build outputs
+*.zip
+*.apk
+*.apk.idsig
+module/fusiond
+module/test_core
+app/out/
+
+# toolchains & SDK (download separately, never commit)
+aarch64-linux-musl-cross/
+aarch64-toolchain.tgz
+sdk/
+jdk/
+
+# signing keys
+*.keystore
+*.jks

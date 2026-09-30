@@ -1,0 +1,17 @@
+# Fusion Controller - SELinux rules (same approach as JoyMerge)
+
+# /dev/uinput is labelled uhid_device in AOSP
+allow magisk uhid_device chr_file { read write open ioctl getattr }
+allow su     uhid_device chr_file { read write open ioctl getattr }
+
+# reading + EVIOCGRAB / EVIOCREVOKE on /dev/input/eventN
+allow magisk input_device chr_file { read write open ioctl getattr }
+allow su     input_device chr_file { read write open ioctl getattr }
+allow magisk input_device dir { search read open getattr }
+allow su     input_device dir { search read open getattr }
+
+# scanning /dev
+allow magisk device dir { search read open getattr }
+allow su     device dir { search read open getattr }
+allow magisk device chr_file { read write open ioctl getattr }
+allow su     device chr_file { read write open ioctl getattr }
