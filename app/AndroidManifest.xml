@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.fusion.control">
+    package="dev.fusion.control"
+    android:versionCode="2"
+    android:versionName="1.1">
 
     <queries>
         <intent>
@@ -11,7 +13,8 @@
 
     <application
         android:label="Fusion Control"
-        android:icon="@drawable/ic_app"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material">
 
         <activity android:name=".MainActivity" android:exported="true">
