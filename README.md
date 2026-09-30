@@ -1,4 +1,4 @@
-# Retroid Fusion Controller
+# GamepadFusion
 
 A Magisk module that merges **all connected gamepads** on an Android handheld
 into one virtual controller — the **Fusion Controller** — plus a small
@@ -9,6 +9,13 @@ Controller. The virtual pad always enumerates as a standard Xbox-layout
 controller, so emulators, launchers and games only ever need one profile.
 
 Built and tested on a **Retroid Pocket 5** (internal pad + 8BitDo Ultimate 2C).
+
+> [!WARNING]
+> **This project is experimental software.** It installs a system-level daemon
+> that grabs raw input devices — expect bugs. You flash/install it entirely at
+> your own risk. **I am not responsible for any damage, data loss, or
+> bootloops.** Keep a bootloop protector (Magisk's built-in one) enabled, and
+> know how to recover your device before installing.
 
 ## How it works
 
@@ -31,12 +38,15 @@ identity — the most widely recognized pad in the Android ecosystem).
 - **System key passthrough** — Back / Home / Menu / Volume keys survive the
   merge (the RP5's back button works)
 - **Rumble merge** — force feedback from any pad is replayed to all pads
+- **Motion controls work** — gyro/accelerometer from the physical pads is
+  passed through untouched, so motion aiming and gyro-based emulators keep
+  working with the Fusion pad
 - **Control socket** — live reconfiguration over a Unix socket, with the
   `fusionctl` CLI and the FusionControl app as frontends
 
 ## Install
 
-1. Flash the module zip from Releases in Magisk and reboot.
+1. Flash the module zip from the [latest release](https://github.com/Epickitrolaz/GamepadFusion/releases) in Magisk and reboot.
 2. (Optional) Install `FusionControl.apk` from Releases — toggle hide mode,
    per-pad layouts and view connected pads from a normal app, no terminal.
    It also ships a **Quick Settings tile** ("Fusion Hide"): add it via the QS
