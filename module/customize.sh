@@ -1,7 +1,7 @@
 SKIPUNZIP=0
 
 ui_print " "
-ui_print "- Fusion Controller v2.1.8"
+ui_print "- Fusion Controller v2.2.0"
 
 if [ "$ARCH" != "arm64" ]; then
   ui_print "! Unsupported architecture: $ARCH"
@@ -61,17 +61,19 @@ chmod 0755 /data/adb/fusion-monitor.sh
 if [ ! -f /data/adb/fusion-apps.conf ]; then
   printf '%s\n' \
     '# Fusion Controller - per-app rules (one per line)' \
-    '#   <package>=hide    physical pads grabbed while app focused' \
+    '#   default: hide mode ON - physical pads grabbed (Fusion pad only)' \
+    '#   <package>=nohide   pads visible/released while this app is focused' \
     '#' \
+    '# Old-style "<package>=hide" lines do nothing now (hide is the default).' \
     '# Find package names:  pm list packages | grep -iE "retro|eden|yuzu"' \
     '#' \
     '# Examples (uncomment and edit):' \
-    '# org.retroarch=hide' \
-    '# xyz.astraware.eden=hide' \
+    '# com.android.launcher3=nohide' \
+    '# com.android.systemui=nohide' \
     > /data/adb/fusion-apps.conf
 fi
 
-echo "$(date) customize.sh: installed v2.1.8" >> /data/adb/fusion.log
+echo "$(date) customize.sh: installed v2.2.0" >> /data/adb/fusion.log
 
 ui_print "- Testing binary..."
 RC=0

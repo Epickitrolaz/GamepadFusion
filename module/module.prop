@@ -1,6 +1,6 @@
 id=fusion_controller
 name=Fusion Controller
-version=v2.1.8
-versionCode=28
+version=v2.2.0
+versionCode=29
 author=fusiond
-description=Merges every connected gamepad (built-in + Bluetooth/USB) into one virtual "Fusion Controller" that all apps can use. Press a button on any pad and the Fusion pad sends it. Sources stay visible by default (HIDE=1 hides them). Config: /data/adb/fusion.conf - Log: /data/adb/fusion.log
+description=Merges every connected gamepad (built-in + Bluetooth/USB) into one virtual "Fusion Controller" that all apps can use. Physical pads are hidden by default (Fusion-only) so games never see double inputs; add <package>=nohide rules in /data/adb/fusion-apps.conf to release pads per-app. Log: /data/adb/fusion.log

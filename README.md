@@ -30,9 +30,10 @@ identity — the most widely recognized pad in the Android ecosystem).
 - **Merge everything**: internal + USB + Bluetooth pads fused into one device
 - **Standard Xbox identity** — every app sees the same controller, no per-app
   controller profiles or double inputs
-- **Hide mode** — grabs physical pads per-app (e.g. RetroArch) so apps that
-  read all devices directly only see the Fusion pad; auto-applied at boot via
-  a foreground monitor (`fusion-monitor.sh` + `/data/adb/fusion-apps.conf`)
+- **Hide mode, ON by default** — physical pads are grabbed (EVIOCGRAB) at all
+  times so apps that read every device directly only see the Fusion pad;
+  apps that need the real pads get them released while focused via
+  `<package>=nohide` rules (`fusion-monitor.sh` + `/data/adb/fusion-apps.conf`)
 - **Per-pad layout remapping** — Nintendo-layout pads get their A/B, X/Y
   swapped to standard Xbox order in real time
 - **System key passthrough** — Back / Home / Menu / Volume keys survive the

@@ -57,11 +57,20 @@ fusionctl layout 0 DEFAULT    # Reset 8BitDo to standard Xbox mapping
 
 ## Configuration Files
 
+### `/data/adb/fusion-apps.conf`
+Per-app rules, checked every second by the foreground monitor:
+```sh
+# default: hide mode ON - physical pads grabbed (Fusion pad only)
+# <package>=nohide   pads visible/released while this app is focused
+com.android.launcher3=nohide
+```
+(Old-style `<package>=hide` lines are no-ops now - hide is the default.)
+
 ### `/data/adb/fusion.conf` (optional)
 Boot-time defaults (overridden by runtime commands):
 ```sh
 NAME=Fusion Controller
-HIDE=0                    # 1 = start hidden, 0 = all visible
+HIDE=1                    # 0 = start with pads released (--no-hide)
 RUMBLE=1                  # 0 = disable rumble relay
 DEBUG=1                   # verbose log
 ```
@@ -108,9 +117,12 @@ cat /data/adb/fusion.log    # Check for errors
 ```
 
 ### Double inputs in some apps
-Those apps read all devices directly. Enable hide mode:
+Pads are hidden by default since v2.2.0, so double inputs should be gone
+everywhere. If an app needs the REAL pads (layout tools, key mappers), release
+them while it is focused:
+
 ```sh
-fusionctl hide on
+echo 'com.example.app=nohide' >> /data/adb/fusion-apps.conf
 ```
 
 ### Wrong button mapping (8BitDo, Nintendo controllers)
@@ -136,7 +148,10 @@ su -c 'touch /data/adb/fusion.disable && pkill fusiond'
 ## Technical Details
 
 - Virtual pad: Xbox 360 USB (VID/PID 045e:028e) → Android applies built-in key layout
-- Hide mechanism: `EVIOCGRAB` (reversible, unlike `EVIOCREVOKE`)
+- Hide mechanism: `EVIOCGRAB` (reversible, unlike `EVIOCREVOKE`); ON by
+  default since v2.2.0, per-app `=nohide` rules release pads while focused
+- Every HIDE/LAYOUT/QUIT command is attributed in the log via
+  `SO_PEERCRED` (uid + pid of the sending client)
 - Socket: `/data/adb/fusion.sock` mode 0666 (any UID can control)
 - Force feedback: Rumble routed to the most recently active physical pad
 - SELinux: Permissive rules for `uhid_device`, `input_device` (see `sepolicy.rule`)
@@ -147,6 +162,6 @@ Built on the JoyMerge architecture (uinput merging on Android). Fusion Controlle
 
 ---
 
-**Version:** 2.0.0  
+**Version:** 2.2.0  
 **Tested on:** Retroid Pocket 5 (Android 13, Magisk 27.0)  
 **Requirements:** Kernel with `CONFIG_INPUT_UINPUT=y`, root (Magisk/KernelSU/APatch)

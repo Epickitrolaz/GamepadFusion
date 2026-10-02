@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  * Fusion Control settings screen.
  *  - shows daemon/pad status
  *  - one-tap hide toggle
- *  - per-app "grab pads while focused" rules -> /data/adb/fusion-apps.conf
+ *  - per-app "release pads (nohide) while focused" rules -> /data/adb/fusion-apps.conf
  * Everything goes through su + /data/adb/fusionctl (Magisk root, granted on first use).
  */
 public class MainActivity extends Activity {
@@ -76,7 +76,7 @@ public class MainActivity extends Activity {
         root.addView(refresh);
 
         TextView appsTitle = new TextView(this);
-        appsTitle.setText("\nGrab pads while this app is focused:");
+        appsTitle.setText("\nRelease pads (visible) while this app is focused:");
         root.addView(appsTitle);
 
         appList = new LinearLayout(this);
@@ -198,9 +198,9 @@ public class MainActivity extends Activity {
                 File f = new File(getCacheDir(), "fusion-apps.conf");
                 PrintWriter w = new PrintWriter(new FileWriter(f));
                 w.println("# Fusion Controller - per-app rules (managed by Fusion Control app)");
-                w.println("# <package>=hide   -> pads grabbed while this app is focused");
+                w.println("# default: hide mode ON (pads grabbed). <package>=nohide -> pads visible while focused");
                 for (Map.Entry<String, Boolean> e : rules.entrySet()) {
-                    if (e.getValue()) w.println(e.getKey() + "=hide");
+                    if (e.getValue()) w.println(e.getKey() + "=nohide");
                 }
                 w.close();
                 String out = Su.run("cp '" + f.getAbsolutePath() + "' /data/adb/fusion-apps.conf");
