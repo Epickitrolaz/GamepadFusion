@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  * Fusion Control settings screen.
  *  - shows daemon/pad status
  *  - one-tap hide toggle
- *  - per-app "release pads (nohide) while focused" rules -> /data/adb/fusion-apps.conf
+ *  - per-app "disable hide mode while focused" rules -> /data/adb/fusion-apps.conf
  * Everything goes through su + /data/adb/fusionctl (Magisk root, granted on first use).
  */
 public class MainActivity extends Activity {
@@ -76,7 +76,7 @@ public class MainActivity extends Activity {
         root.addView(refresh);
 
         TextView appsTitle = new TextView(this);
-        appsTitle.setText("\nRelease pads (visible) while this app is focused:");
+        appsTitle.setText("\nDisable hide mode for selected apps. Selected apps keep pads visible while focused:");
         root.addView(appsTitle);
 
         appList = new LinearLayout(this);
@@ -179,7 +179,10 @@ public class MainActivity extends Activity {
             CheckBox cb = new CheckBox(this);
             cb.setText(e.getValue() + "   [" + pkg + "]");
             cb.setChecked(Boolean.TRUE.equals(rules.get(pkg)));
-            cb.setOnClickListener(v -> rules.put(pkg, ((CheckBox) v).isChecked()));
+            cb.setOnClickListener(v -> {
+                if (((CheckBox) v).isChecked()) rules.put(pkg, true);
+                else rules.remove(pkg);
+            });
             appList.addView(cb);
         }
     }
