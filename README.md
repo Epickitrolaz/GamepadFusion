@@ -81,7 +81,7 @@ ANDROID_SDK=/path/to/sdk JAVA_HOME=/path/to/jdk ./app/build_apk.sh
 
 ## Credits
 
-Inspired by [JoyMerge](https://github.com/mkturkcan/JoyMerge) (Joy-Con merging
+Inspired by [JoyMerge](https://github.com/quatrixone/JoyMerge) (Joy-Con merging
 via uinput on Android). Related quirk thread on Retroid controller device IDs.
 
 ## License
