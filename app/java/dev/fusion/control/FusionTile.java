@@ -12,34 +12,61 @@ import java.util.concurrent.Executors;
 /**
  * Quick Settings tile: tap to toggle hide mode (grab physical pads / Fusion-only).
  *
- * All su round-trips run on a background executor; tile updates are posted back
- * to the main thread so SystemUI is never blocked.
+ * su round-trips run on a background executor; tile updates are posted back to
+ * the main thread so SystemUI is never blocked. While the tile is listening
+ * (QS shade open) it re-polls the daemon every second, so profile switches made
+ * by the per-app monitor show up immediately instead of whenever SystemUI
+ * next decides to rebind the service.
  */
 public class FusionTile extends TileService {
 
+    private static final long POLL_MS = 1000;
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    @Override public void onStartListening() { refresh(); }
-    @Override public void onTileAdded()      { refresh(); }
-    @Override public void onClick()          { toggle(); }
+    private boolean listening = false;
+    private boolean querying = false;
 
-    /** Runs a root command in the background, then invokes cb on the main thread. */
-    private void su(final String cmd, final Callback cb) {
+    private final Runnable tick = this::poll;
+
+    @Override public void onStartListening() {
+        listening = true;
+        poll();          // immediate first state, then scheduled refreshes
+    }
+
+    @Override public void onStopListening() {
+        listening = false;
+        main.removeCallbacks(tick);
+    }
+
+    @Override public void onTileAdded() { queryOnce(); }
+
+    @Override public void onClick() { toggle(); }
+
+    /** One su round-trip, result applied on the main thread. */
+    private void queryOnce() {
         final Tile t = getQsTile();
         if (t == null) return;
+        if (querying) {
+            // a query is already queued/running - try again on the next tick
+            // (always reschedule, or the polling loop would die here)
+            if (listening) main.postDelayed(tick, POLL_MS);
+            return;
+        }
+        querying = true;
         EXEC.execute(() -> {
-            final String out = Su.run(cmd);
-            main.post(() -> cb.done(out));
+            final String out = Su.run("/data/adb/fusionctl status");
+            main.post(() -> { querying = false; apply(out); });
         });
     }
 
-    private interface Callback { void done(String out); }
+    private void poll() {
+        if (listening) queryOnce();
+    }
 
-    private void refresh() {
-        final Tile t = getQsTile();
-        if (t == null) return;
-        su("/data/adb/fusionctl status", out -> {
+    private void apply(String out) {
+        Tile t = getQsTile();
+        if (t != null) {
             if (out.contains("\"hide_mode\":1")) {
                 t.setState(Tile.STATE_ACTIVE);
                 subtitle(t, "pads grabbed - Fusion only");
@@ -51,7 +78,8 @@ public class FusionTile extends TileService {
                 subtitle(t, "daemon offline");
             }
             t.updateTile();
-        });
+        }
+        if (listening) main.postDelayed(tick, POLL_MS);
     }
 
     private void toggle() {
@@ -60,7 +88,8 @@ public class FusionTile extends TileService {
         boolean on = t.getState() == Tile.STATE_ACTIVE;
         subtitle(t, "switching\u2026");
         t.updateTile();
-        su("/data/adb/fusionctl hide " + (on ? "off" : "on"), out -> refresh());
+        EXEC.execute(() -> Su.run("/data/adb/fusionctl hide " + (on ? "off" : "on")));
+        queryOnce();
     }
 
     private static void subtitle(Tile t, String s) {
