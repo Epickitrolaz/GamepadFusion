@@ -52,7 +52,7 @@
 #define BTN_TRIGGER_HAPPY24 (BTN_TRIGGER_HAPPY1 + 23)
 #endif
 
-#define VERSION     "2.1.8"
+#define VERSION     "2.2.0"
 #define MAX_PADS    16
 #define MAX_USER_MAP 256
 #define FF_SLOTS    16
@@ -63,7 +63,7 @@ static const char *FUSION_NAME = "Fusion Controller";
 static const char *MAP_PATH    = "/data/adb/fusion.map";
 static const char *FUSION_PHYS = "fusion-bridge";
 
-static int hide_mode;
+static int hide_mode = 1;   /* v2.2.0: hide ON by default (--no-hide starts released) */
 static int rumble_on = 1;
 static int debug;
 static volatile sig_atomic_t g_quit;
@@ -105,6 +105,8 @@ static int ufd = -1;
 static int sockfd = -1;
 static int client_fds[MAX_CLIENTS];
 static time_t client_since[MAX_CLIENTS];
+static int client_uid[MAX_CLIENTS];   /* SO_PEERCRED of each client */
+static int client_pid[MAX_CLIENTS];
 
 /* ---------------------------------------------------------------- logging */
 static void logmsg(const char *fmt, ...)
@@ -785,7 +787,10 @@ static int sock_init(void)
     struct sockaddr_un addr;
     int i;
 
-    for (i = 0; i < MAX_CLIENTS; i++) { client_fds[i] = -1; client_since[i] = 0; }
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        client_fds[i] = -1; client_since[i] = 0;
+        client_uid[i] = -1; client_pid[i] = -1;
+    }
 
     sockfd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (sockfd < 0) {
@@ -829,9 +834,17 @@ static void sock_accept(void)
     fcntl(cfd, F_SETFL, O_NONBLOCK);
     for (i = 0; i < MAX_CLIENTS; i++) {
         if (client_fds[i] < 0) {
+            struct ucred cr;
+            socklen_t crl = sizeof cr;
             client_fds[i] = cfd;
             client_since[i] = time(NULL);
-            if (debug) logmsg("client %d connected", i);
+            client_uid[i] = -1;
+            client_pid[i] = -1;
+            if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cr, &crl) == 0) {
+                client_uid[i] = (int)cr.uid;
+                client_pid[i] = (int)cr.pid;
+            }
+            logmsg("client %d connected (uid=%d pid=%d)", i, client_uid[i], client_pid[i]);
             return;
         }
     }
@@ -848,6 +861,8 @@ static void sock_handle_client(int slot)
     if (r <= 0) {
         close(cfd);
         client_fds[slot] = -1;
+        client_uid[slot] = -1;
+        client_pid[slot] = -1;
         if (debug) logmsg("client %d disconnected", slot);
         return;
     }
@@ -858,6 +873,7 @@ static void sock_handle_client(int slot)
         int n = sscanf(line, "%63s %63s %63s", cmd, arg1, arg2);
 
         if (n == 2 && strcmp(cmd, "HIDE") == 0) {
+            logmsg("HIDE %s from uid=%d pid=%d", arg1, client_uid[slot], client_pid[slot]);
             if (strcmp(arg1, "ON") == 0) {
                 apply_hide_mode(1);
                 dprintf(cfd, "OK HIDE ON\n");
@@ -879,7 +895,8 @@ static void sock_handle_client(int slot)
             }
             if (idx >= 0 && idx < npads) {
                 pads[idx].layout = mode;
-                logmsg("pad %d layout -> %s", idx, arg2);
+                logmsg("pad %d layout -> %s (uid=%d pid=%d)", idx, arg2,
+                       client_uid[slot], client_pid[slot]);
                 dprintf(cfd, "OK LAYOUT %d %s\n", idx, arg2);
             } else {
                 dprintf(cfd, "ERROR pad index out of range\n");
@@ -913,7 +930,8 @@ static void sock_handle_client(int slot)
             dprintf(cfd, "OK PING - synthetic A press sent to Fusion\n");
         }
         else if (n == 1 && strcmp(cmd, "QUIT") == 0) {
-            logmsg("QUIT command received");
+            logmsg("QUIT command received (uid=%d pid=%d)",
+                   client_uid[slot], client_pid[slot]);
             g_quit = 1;
             dprintf(cfd, "OK QUIT\n");
         }
@@ -994,7 +1012,8 @@ static int main_loop(void)
                 logmsg("loop: pads=%d clients=%d evtx=%llu", npads, ncl, evtx_count);
                 for (i = 0; i < MAX_CLIENTS; i++)
                     if (client_fds[i] >= 0 && now - client_since[i] > 30) {
-                        logmsg("client slot %d stale - closing", i);
+                        logmsg("client slot %d stale (uid=%d pid=%d) - closing",
+                               i, client_uid[i], client_pid[i]);
                         close(client_fds[i]);
                         client_fds[i] = -1;
                     }
@@ -1076,11 +1095,12 @@ int main(int argc, char **argv)
         }
         if (!strncmp(argv[i], "--name=", 7))       FUSION_NAME = argv[i] + 7;
         else if (!strcmp(argv[i], "--hide"))        hide_mode = 1;
+        else if (!strcmp(argv[i], "--no-hide"))     hide_mode = 0;
         else if (!strcmp(argv[i], "--no-rumble"))   rumble_on = 0;
         else if (!strcmp(argv[i], "--debug"))       debug = 1;
         else if (!strncmp(argv[i], "--map=", 6))    MAP_PATH = argv[i] + 6;
         else {
-            fprintf(stderr, "usage: fusiond [--name=NAME] [--hide] [--no-rumble] "
+            fprintf(stderr, "usage: fusiond [--name=NAME] [--hide] [--no-hide] [--no-rumble] "
                             "[--debug] [--map=FILE] [--version]\n");
             return 2;
         }

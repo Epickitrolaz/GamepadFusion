@@ -25,12 +25,14 @@ if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1048576 ]; then
 fi
 
 # optional config file, KEY=VALUE lines:
-#   NAME=, HIDE=1, RUMBLE=0, DEBUG=1, EXTRA_ARGS=
+#   NAME=, HIDE=, RUMBLE=0, DEBUG=1, EXTRA_ARGS=
+#   HIDE=0 starts with pads released (--no-hide); default/1 = hide ON
 ARGS=""
 if [ -f "$CONF" ]; then
   . "$CONF"
   [ -n "$NAME" ]      && ARGS="$ARGS --name=$NAME"
   [ "$HIDE" = "1" ]   && ARGS="$ARGS --hide"
+  [ "$HIDE" = "0" ]   && ARGS="$ARGS --no-hide"
   [ "$RUMBLE" = "0" ] && ARGS="$ARGS --no-rumble"
   [ "$DEBUG" = "1" ]  && ARGS="$ARGS --debug"
   ARGS="$ARGS $EXTRA_ARGS"
