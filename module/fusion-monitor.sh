@@ -28,8 +28,13 @@ send() { echo "$1" | timeout 3 nc -U "$SOCK" >/dev/null 2>&1; }
 
 pkg_of() {
   timeout 5 dumpsys window 2>/dev/null | grep -m1 -E 'mCurrentFocus|mFocusedApp' \
-    | sed -n 's/.* u[0-9]* \([^ /}]*\).*/\1/p' | tr -d ' \r'
+    | sed -n 's/.* u[0-9]* \([^ }]*\).*/\1/p' | tr -d ' \r'
 }
+
+# is this focus window an app? App windows carry "pkg/pkg.Activity" titles;
+# system surfaces (notification shade, QS, keyboard, lockscreen, recents) do
+# not. ROMs differ - some report "com.android.systemui/...", others just
+# "StatusBar" or "NotificationShade" - so match those names as a fallback.
 
 wants_show() {
   [ -f "$CONF" ] || return 1
@@ -54,9 +59,21 @@ done
 
 LAST_HIDE=""
 LAST_PKG="__init__"
+LAST_APP=""
 CYCLE=0
 while :; do
-  PKG=$(pkg_of)
+  WIN=$(pkg_of)
+  [ "$WIN" = null ] && WIN=""
+  # A shade/QS pull-down, keyboard or lockscreen is not an app switch: keep
+  # the previous app's rule so hide mode stays exactly as it was. Same for an
+  # empty focus (dumpsys hiccup) - state persists instead of flip-flopping.
+  case "$WIN" in
+    ""|*StatusBar*|*NotificationShade*|*NavigationBar*|*Recents*|*InputMethod*|com.android.systemui*)
+      PKG="$LAST_APP" ;;
+    *)
+      PKG="${WIN%%/*}"
+      LAST_APP="$PKG" ;;
+  esac
   # default: hidden. Only a listed nohide app releases the pads. An unknown
   # focus (dumpsys slow/dead) also stays hidden - safer for games.
   HIDE=yes
