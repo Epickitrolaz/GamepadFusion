@@ -39,6 +39,8 @@ identity — the most widely recognized pad in the Android ecosystem).
 1. Flash the module zip from Releases in Magisk and reboot.
 2. (Optional) Install `FusionControl.apk` from Releases — toggle hide mode,
    per-pad layouts and view connected pads from a normal app, no terminal.
+   It also ships a **Quick Settings tile** ("Fusion Hide"): add it via the QS
+   edit (pencil) button and toggle hide mode straight from the shade.
 
 CLI quick reference (run as root):
 
@@ -72,6 +74,7 @@ ANDROID_SDK=/path/to/sdk JAVA_HOME=/path/to/jdk ./app/build_apk.sh
 ├── module/          Magisk module: fusiond.c daemon, installer, control CLI
 │   └── fusiond.c    the daemon (single-file C, no dependencies, static-linked)
 ├── app/             FusionControl companion app (no-Gradle build: aapt2/javac/d8)
+│   └── icon/        icon SVG sources (adaptive bg/fg layers; PNGs rendered with resvg)
 ├── module/README.md detailed usage, socket protocol, troubleshooting
 └── LICENSE          MIT
 ```
