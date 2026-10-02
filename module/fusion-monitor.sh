@@ -2,11 +2,18 @@
 # fusion-monitor: watches the foreground app and applies per-app Fusion rules.
 #
 # Config: /data/adb/fusion-apps.conf  (one rule per line)
-#   <package>=hide      physical pads are grabbed while this app is focused
+#   <package>=nohide   physical pads are RELEASED while this app is focused
 #
-# v2.1.3: retry failed sends (socket may not exist yet at boot - the daemon
-# races us), and re-assert the current state every 30s so a daemon restart
-# (watchdog) can never leave pads unhidden/unhidden incorrectly.
+# v2.2.0: INVERTED default - hide mode is ON unless an app asks for OFF.
+#   No rule (or no config, or an unreadable focus) = pads stay grabbed, so
+#   games never see double inputs. Only listed nohide apps get pads visible.
+#   Old-style <package>=hide lines are harmless no-ops now (hide is default).
+#   Keepalive no longer blind-sends: it queries the daemon's STATUS first and
+#   only sends when the daemon's actual state disagrees with our belief. If
+#   STATUS is unreadable (daemon restarting) it falls back to a blind assert
+#   so a restarted daemon still ends up in the right state.
+#   v2.1.3: retry failed sends (socket may not exist yet at boot - the daemon
+#   races us), and re-assert the current state periodically.
 
 LOG=/data/adb/fusion.log
 CONF=/data/adb/fusion-apps.conf
@@ -20,16 +27,22 @@ log() { echo "$(date) monitor: $1" >> "$LOG"; }
 send() { echo "$1" | timeout 3 nc -U "$SOCK" >/dev/null 2>&1; }
 
 pkg_of() {
-  timeout 2 dumpsys window 2>/dev/null | grep -m1 mCurrentFocus \
+  timeout 5 dumpsys window 2>/dev/null | grep -m1 -E 'mCurrentFocus|mFocusedApp' \
     | sed -n 's/.* u[0-9]* \([^ /}]*\).*/\1/p' | tr -d ' \r'
 }
 
-wants_hide() {
+wants_show() {
   [ -f "$CONF" ] || return 1
-  awk -v p="$1" -F= '$1==p && $2 ~ /hide/ {f=1} END{exit f?0:1}' "$CONF"
+  awk -v p="$1" -F= '$1==p && tolower($2) ~ /nohide|show/ {f=1} END{exit f?0:1}' "$CONF"
 }
 
-log "started (config=$CONF) pid=$$"
+# the daemon's actual hide state: prints 0 or 1, nothing if unreachable
+daemon_hide() {
+  echo STATUS | timeout 3 nc -U "$SOCK" 2>/dev/null \
+    | grep -o '"hide_mode":[01]' | cut -d: -f2
+}
+
+log "started (config=$CONF pid=$$)"
 trap 'log "monitor exited unexpectedly rc=$?"' EXIT
 
 # wait up to 60s for the daemon's socket to appear
@@ -44,10 +57,12 @@ LAST_PKG="__init__"
 CYCLE=0
 while :; do
   PKG=$(pkg_of)
-  HIDE=no
-  [ -n "$PKG" ] && wants_hide "$PKG" && HIDE=yes
-  CMD="HIDE OFF"
-  [ "$HIDE" = yes ] && CMD="HIDE ON"
+  # default: hidden. Only a listed nohide app releases the pads. An unknown
+  # focus (dumpsys slow/dead) also stays hidden - safer for games.
+  HIDE=yes
+  [ -n "$PKG" ] && wants_show "$PKG" && HIDE=no
+  CMD="HIDE ON"
+  [ "$HIDE" = no ] && CMD="HIDE OFF"
 
   # log every focus change (deduped) - makes boot behavior visible in the log
   if [ "$PKG" != "$LAST_PKG" ]; then
@@ -64,9 +79,17 @@ while :; do
       log "send failed (focus=$PKG) - retrying next cycle"
     fi
   elif [ $((CYCLE % 30)) = 0 ]; then
-    # heartbeat proves the loop is turning + keepalive re-asserts state
+    # heartbeat proves the loop is turning; reconcile instead of blind-assert
+    # so we stop stomping the daemon when our belief already matches reality
     log "alive: focus=${PKG:-none} hide=$HIDE"
-    send "$CMD" || log "keepalive send failed"
+    WANT=1; [ "$HIDE" = no ] && WANT=0
+    GOT=$(daemon_hide)
+    if [ -n "$GOT" ] && [ "$GOT" != "$WANT" ]; then
+      send "$CMD" || log "keepalive send failed"
+    elif [ -z "$GOT" ]; then
+      # STATUS unreadable (daemon restarting?) - blind assert as fallback
+      send "$CMD" || log "keepalive send failed (daemon unreachable)"
+    fi
   fi
   CYCLE=$((CYCLE+1))
   sleep $INTERVAL

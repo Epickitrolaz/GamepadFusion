@@ -18,11 +18,13 @@ chmod 0755 /data/adb/fusiond /data/adb/fusionctl 2>/dev/null
 echo "$(date) service.sh: boot complete, spawning runner" >> "$LOG"
 
 # run via sh so missing exec bits can never break the chain
+# the monitor is supervised: if it ever dies it is respawned 2s later.
+# touch /data/adb/fusion.monitor.disable + pkill fusion-monitor to stop it.
 if command -v setsid >/dev/null 2>&1; then
   setsid sh "$MODDIR/fusiond-run.sh" >/dev/null 2>&1 &
-  setsid sh "$MODDIR/fusion-monitor.sh" >/dev/null 2>&1 &
+  setsid sh -c "while :; do [ -f /data/adb/fusion.monitor.disable ] || sh '$MODDIR/fusion-monitor.sh'; sleep 2; done" >/dev/null 2>&1 &
 else
   ( sh "$MODDIR/fusiond-run.sh" >/dev/null 2>&1 ) &
-  ( sh "$MODDIR/fusion-monitor.sh" >/dev/null 2>&1 ) &
+  ( while :; do [ -f /data/adb/fusion.monitor.disable ] || sh "$MODDIR/fusion-monitor.sh"; sleep 2; done ) &
 fi
-echo "$(date) service.sh: runner + monitor spawned" >> "$LOG"
+echo "$(date) service.sh: runner + monitor supervisor spawned" >> "$LOG"
