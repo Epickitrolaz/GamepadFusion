@@ -1,7 +1,7 @@
 SKIPUNZIP=0
 
 ui_print " "
-ui_print "- Fusion Controller v2.2.0"
+ui_print "- Fusion Controller v2.3.0"
 
 if [ "$ARCH" != "arm64" ]; then
   ui_print "! Unsupported architecture: $ARCH"
@@ -53,6 +53,8 @@ ui_print "- module dir: $MDIR"
 # ----------------------------------------------------- copies to /data/adb
 cp -f "$STAGE/fusiond" /data/adb/fusiond
 chmod 0755 /data/adb/fusiond
+cp -f "$STAGE/fusiond-run.sh" /data/adb/fusiond-run.sh
+chmod 0755 /data/adb/fusiond-run.sh
 cp -f "$STAGE/fusionctl.sh" /data/adb/fusionctl
 chmod 0755 /data/adb/fusionctl
 cp -f "$STAGE/fusion-monitor.sh" /data/adb/fusion-monitor.sh
@@ -73,7 +75,7 @@ if [ ! -f /data/adb/fusion-apps.conf ]; then
     > /data/adb/fusion-apps.conf
 fi
 
-echo "$(date) customize.sh: installed v2.2.0" >> /data/adb/fusion.log
+echo "$(date) customize.sh: installed v2.3.0" >> /data/adb/fusion.log
 
 ui_print "- Testing binary..."
 RC=0

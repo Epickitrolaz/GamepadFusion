@@ -113,6 +113,11 @@ int main(void) {
     T("dinput garbage-neu: Z -> RX", e7.out_code[ABS_Z], ABS_RX);
     T("dinput garbage-neu: RZ -> RY", e7.out_code[ABS_RZ], ABS_RY);
 
+    /* rescan_devices: clears pads and resets state */
+    npads = 1; pads[0].fd = -1;
+    rescan_devices();
+    T("rescan_devices: npads reset", npads, 0);
+
     printf(fails ? "== %d FAILURES ==\n" : "== all pass ==\n", fails);
     return fails != 0;
 }

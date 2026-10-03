@@ -91,6 +91,8 @@ Connect to `/data/adb/fusion.sock` (Unix domain, SOCK_STREAM), send text command
 | `HIDE OFF` | `OK HIDE OFF` | Release all physical pads |
 | `LAYOUT <idx> <mode>` | `OK LAYOUT ...` | mode = `NINTENDO` \| `XBOX` \| `DEFAULT` |
 | `STATUS` | `{...JSON...}` | Current state: hide_mode, pads array |
+| `RESCAN` | `OK RESCAN <n> pads` | Rescan connected gamepads and reset axis disambiguation |
+| `RESTART` | `OK RESTART` | Clean daemon restart and re-enumeration |
 | `QUIT` | `OK QUIT` | Graceful daemon shutdown |
 
 Example (shell):
@@ -131,6 +133,16 @@ fusionctl status            # Find your pad's index
 fusionctl layout 0 NINTENDO # Swap A↔B, X↔Y
 ```
 
+### Wrong axis mapping / stick recognized as trigger
+If an analog axis (such as a right stick on ABS_Z/ABS_RZ) gets mistakenly recognized as a trigger (L2/R2) due to resting position or connection quirks:
+- Tap the **Fusion Restart** Quick Settings tile in the notification shade.
+- Or run:
+  ```sh
+  su -c fusionctl restart
+  ```
+  This restarts the daemon and rescans all pads, resetting axis disambiguation so sticks are correctly mapped.
+- Alternatively, run `su -c fusionctl rescan` to re-enumerate and reset disambiguation without restarting the daemon.
+
 ### Disable the module
 ```sh
 su -c 'touch /data/adb/fusion.disable && pkill fusiond'
@@ -162,6 +174,6 @@ Built on the JoyMerge architecture (uinput merging on Android). Fusion Controlle
 
 ---
 
-**Version:** 2.2.0  
+**Version:** 2.3.0  
 **Tested on:** Retroid Pocket 5 (Android 13, Magisk 27.0)  
 **Requirements:** Kernel with `CONFIG_INPUT_UINPUT=y`, root (Magisk/KernelSU/APatch)

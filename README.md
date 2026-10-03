@@ -49,9 +49,10 @@ identity — the most widely recognized pad in the Android ecosystem).
 
 1. Flash the module zip from the [latest release](https://github.com/Epickitrolaz/GamepadFusion/releases) in Magisk and reboot.
 2. (Optional) Install `FusionControl.apk` from Releases — toggle hide mode,
-   per-pad layouts and view connected pads from a normal app, no terminal.
-   It also ships a **Quick Settings tile** ("Fusion Hide"): add it via the QS
-   edit (pencil) button and toggle hide mode straight from the shade.
+   per-pad layouts, restart/rescan, and view connected pads from a normal app, no terminal.
+   It also ships **Quick Settings tiles**:
+   - **Fusion Hide**: toggle hide mode (grab physical pads / Fusion-only) straight from the shade.
+   - **Fusion Restart**: restart the daemon and rescan pads with one tap to fix axes incorrectly recognized as triggers.
 
 CLI quick reference (run as root):
 
@@ -59,6 +60,8 @@ CLI quick reference (run as root):
 fusionctl status                 # pads + fusion device state
 fusionctl hide 1                 # hide physical pads (grab) — for RetroArch etc.
 fusionctl layout 0 NINTENDO      # remap pad 0 to Nintendo layout
+fusionctl restart                # restart daemon & rescan pads (fixes axis/trigger issues)
+fusionctl rescan                 # rescan pads and reset disambiguation without restart
 ```
 
 Details, config files and troubleshooting: [`module/README.md`](module/README.md)

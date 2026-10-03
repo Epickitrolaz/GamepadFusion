@@ -70,6 +70,11 @@ public class MainActivity extends Activity {
         hideBtn.setOnClickListener(v -> toggleHide());
         root.addView(hideBtn);
 
+        Button restartBtn = new Button(this);
+        restartBtn.setText("restart daemon & rescan pads");
+        restartBtn.setOnClickListener(v -> restartDaemon());
+        root.addView(restartBtn);
+
         Button refresh = new Button(this);
         refresh.setText("refresh");
         refresh.setOnClickListener(v -> refresh());
@@ -191,6 +196,15 @@ public class MainActivity extends Activity {
         final String cmd = "/data/adb/fusionctl hide " + (hideOn ? "off" : "on");
         new Thread(() -> {
             String out = Su.run(cmd);
+            runOnUiThread(() -> { log(out); refresh(); });
+        }).start();
+    }
+
+    private void restartDaemon() {
+        status.setText("restarting daemon & rescanning pads…");
+        new Thread(() -> {
+            String out = Su.run("/data/adb/fusionctl restart");
+            try { Thread.sleep(700); } catch (InterruptedException ignored) {}
             runOnUiThread(() -> { log(out); refresh(); });
         }).start();
     }

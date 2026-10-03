@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.fusion.control"
-    android:versionCode="3"
-    android:versionName="1.2">
+    android:versionCode="4"
+    android:versionName="1.3">
 
     <queries>
         <intent>
@@ -28,6 +28,17 @@
             android:name=".FusionTile"
             android:icon="@drawable/tile_icon"
             android:label="Fusion Hide"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".FusionRestartTile"
+            android:icon="@drawable/tile_restart_icon"
+            android:label="Fusion Restart"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>

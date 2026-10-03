@@ -1,6 +1,6 @@
 id=fusion_controller
 name=Fusion Controller
-version=v2.2.0
-versionCode=29
+version=v2.3.0
+versionCode=30
 author=fusiond
 description=Merges every connected gamepad (built-in + Bluetooth/USB) into one virtual "Fusion Controller" that all apps can use. Physical pads are hidden by default (Fusion-only) so games never see double inputs; add <package>=nohide rules in /data/adb/fusion-apps.conf to release pads per-app. Log: /data/adb/fusion.log

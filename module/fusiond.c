@@ -52,7 +52,7 @@
 #define BTN_TRIGGER_HAPPY24 (BTN_TRIGGER_HAPPY1 + 23)
 #endif
 
-#define VERSION     "2.2.0"
+#define VERSION     "2.3.0"
 #define MAX_PADS    16
 #define MAX_USER_MAP 256
 #define FF_SLOTS    16
@@ -67,6 +67,9 @@ static int hide_mode = 1;   /* v2.2.0: hide ON by default (--no-hide starts rele
 static int rumble_on = 1;
 static int debug;
 static volatile sig_atomic_t g_quit;
+static volatile sig_atomic_t g_restart;
+static volatile sig_atomic_t g_rescan;
+static char **g_argv;
 static unsigned long long g_act_counter;
 
 #define BITS_PER_UL (sizeof(unsigned long) * 8)
@@ -701,6 +704,35 @@ static void scan_devices(void)
     closedir(d);
 }
 
+static void rescan_devices(void)
+{
+    int i;
+    logmsg("rescanning all devices (current pads: %d)", npads);
+    for (i = 0; i < npads; i++) {
+        release_pad_keys(i);
+        if (pads[i].fd >= 0) close(pads[i].fd);
+    }
+    for (i = 0; i < FF_SLOTS; i++) {
+        ff_pad_idx[i] = -1;
+        ff_pad_id[i] = -1;
+    }
+    npads = 0;
+    memset(pads, 0, sizeof pads);
+    memset(pad_pfd_idx, 0, sizeof pad_pfd_idx);
+
+    if (ufd >= 0) {
+        for (i = 0; i < ABS_CNT; i++) {
+            if (fusion_has_axis(i)) emit3(EV_ABS, i, 0);
+        }
+        emit3(EV_SYN, SYN_REPORT, 0);
+    }
+    memset(last_axis, 0, sizeof last_axis);
+    memset(last_union, 0, sizeof last_union);
+
+    scan_devices();
+    logmsg("rescan complete: %d pad(s) active", npads);
+}
+
 /* --------------------------------------------------------- fusion creation */
 static int fusion_create(void)
 {
@@ -929,6 +961,19 @@ static void sock_handle_client(int slot)
             emit3(EV_SYN, SYN_REPORT, 0);
             dprintf(cfd, "OK PING - synthetic A press sent to Fusion\n");
         }
+        else if (n == 1 && strcmp(cmd, "RESCAN") == 0) {
+            logmsg("RESCAN command received (uid=%d pid=%d)",
+                   client_uid[slot], client_pid[slot]);
+            rescan_devices();
+            dprintf(cfd, "OK RESCAN %d pads\n", npads);
+        }
+        else if (n == 1 && strcmp(cmd, "RESTART") == 0) {
+            logmsg("RESTART command received (uid=%d pid=%d)",
+                   client_uid[slot], client_pid[slot]);
+            g_restart = 1;
+            g_quit = 1;
+            dprintf(cfd, "OK RESTART\n");
+        }
         else if (n == 1 && strcmp(cmd, "QUIT") == 0) {
             logmsg("QUIT command received (uid=%d pid=%d)",
                    client_uid[slot], client_pid[slot]);
@@ -962,6 +1007,7 @@ static void log_self(void)
 }
 
 static void on_term(int sig) { (void)sig; g_quit = 1; }
+static void on_hup(int sig)  { (void)sig; g_rescan = 1; }
 
 static int main_loop(void)
 {
@@ -978,6 +1024,11 @@ static int main_loop(void)
     while (!g_quit) {
         struct pollfd pfds[MAX_PADS + MAX_CLIENTS + 3];
         int n = 0, rc;
+
+        if (g_rescan) {
+            g_rescan = 0;
+            rescan_devices();
+        }
 
         pfds[n].fd = ufd;   pfds[n].events = POLLIN; pfds[n].revents = 0; n++;
         if (inot >= 0) { pfds[n].fd = inot; pfds[n].events = POLLIN; pfds[n].revents = 0; n++; }
@@ -997,7 +1048,21 @@ static int main_loop(void)
 
         rc = poll(pfds, (nfds_t)n, 3000);
         if (g_quit) break;
-        if (rc < 0) { if (errno == EINTR) continue; logmsg("poll: %s", strerror(errno)); break; }
+        if (rc < 0) {
+            if (errno == EINTR) {
+                if (g_rescan) {
+                    g_rescan = 0;
+                    rescan_devices();
+                }
+                continue;
+            }
+            logmsg("poll: %s", strerror(errno));
+            break;
+        }
+        if (g_rescan) {
+            g_rescan = 0;
+            rescan_devices();
+        }
         classify_ambiguous();
 
         {
@@ -1088,6 +1153,8 @@ int main(int argc, char **argv)
     int i;
     struct sched_param sp;
 
+    g_argv = argv;
+
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--version")) {
             printf("fusiond %s\n", VERSION);
@@ -1118,6 +1185,7 @@ int main(int argc, char **argv)
 
     signal(SIGTERM, on_term);
     signal(SIGINT, on_term);
+    signal(SIGHUP, on_hup);
     signal(SIGPIPE, SIG_IGN);
 
     load_user_map(MAP_PATH);
@@ -1131,6 +1199,14 @@ int main(int argc, char **argv)
     if (sockfd >= 0) { close(sockfd); unlink(SOCK_PATH); }
     for (i = 0; i < npads; i++) close(pads[i].fd);
     for (i = 0; i < MAX_CLIENTS; i++) if (client_fds[i] >= 0) close(client_fds[i]);
+
+    if (g_restart) {
+        logmsg("fusiond restarting daemon (execv)...");
+        execv("/proc/self/exe", g_argv);
+        if (g_argv && g_argv[0]) execv(g_argv[0], g_argv);
+        logmsg("FATAL: execv failed: %s", strerror(errno));
+        return 1;
+    }
 
     logmsg("fusiond exiting cleanly");
     return 0;
