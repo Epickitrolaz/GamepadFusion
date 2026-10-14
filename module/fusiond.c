@@ -52,7 +52,7 @@
 #define BTN_TRIGGER_HAPPY24 (BTN_TRIGGER_HAPPY1 + 23)
 #endif
 
-#define VERSION     "2.4.0"
+#define VERSION     "2.4.1"
 #define MAX_PADS    16
 #define MAX_USER_MAP 256
 #define FF_SLOTS    16
@@ -189,7 +189,6 @@ static unsigned short remap_layout(struct pad *p, unsigned short code)
 /* ------------------------------------------------- fusion axis capabilities */
 static const int fusion_axes[] = {
     ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ,
-    ABS_BRAKE, ABS_GAS,
     ABS_HAT0X, ABS_HAT0Y, ABS_HAT1X, ABS_HAT1Y, ABS_HAT2X, ABS_HAT2Y,
 };
 
@@ -207,7 +206,6 @@ static void fusion_axis_range(int code, int *mn, int *mx)
     case ABS_X: case ABS_Y: case ABS_RX: case ABS_RY:
         *mn = -32768; *mx = 32767; break;
     case ABS_Z: case ABS_RZ:
-    case ABS_BRAKE: case ABS_GAS:
         *mn = 0; *mx = 255; break;
     default:
         *mn = -1; *mx = 1; break;
@@ -320,7 +318,7 @@ static int pad_has_analog_lt(const struct pad *p)
 {
     int i;
     for (i = 0; i < ABS_CNT; i++) {
-        if (bit_test(p->axbits, i) && (p->out_code[i] == ABS_Z || p->out_code[i] == ABS_BRAKE))
+        if (bit_test(p->axbits, i) && p->out_code[i] == ABS_Z)
             return 1;
     }
     return 0;
@@ -330,7 +328,7 @@ static int pad_has_analog_rt(const struct pad *p)
 {
     int i;
     for (i = 0; i < ABS_CNT; i++) {
-        if (bit_test(p->axbits, i) && (p->out_code[i] == ABS_RZ || p->out_code[i] == ABS_GAS))
+        if (bit_test(p->axbits, i) && p->out_code[i] == ABS_RZ)
             return 1;
     }
     return 0;
@@ -353,14 +351,10 @@ static void release_pad_keys(int idx)
                 released_any = 1;
                 if ((int)i == BTN_TL2 && !pad_has_analog_lt(p)) {
                     last_axis[ABS_Z] = 0;
-                    last_axis[ABS_BRAKE] = 0;
                     emit3(EV_ABS, ABS_Z, 0);
-                    emit3(EV_ABS, ABS_BRAKE, 0);
                 } else if ((int)i == BTN_TR2 && !pad_has_analog_rt(p)) {
                     last_axis[ABS_RZ] = 0;
-                    last_axis[ABS_GAS] = 0;
                     emit3(EV_ABS, ABS_RZ, 0);
-                    emit3(EV_ABS, ABS_GAS, 0);
                 }
             }
         }
@@ -431,13 +425,6 @@ static void classify_axis(struct pad *p, int code, int observed)
         p->out_code[out]  = -1;       /* silent phantom axis loses */
         if (last_axis[code] != 0) {   /* release any stale L2/R2 */
             emit3(EV_ABS, code, 0);
-            if (code == ABS_Z) {
-                emit3(EV_ABS, ABS_BRAKE, 0);
-                last_axis[ABS_BRAKE] = 0;
-            } else if (code == ABS_RZ) {
-                emit3(EV_ABS, ABS_GAS, 0);
-                last_axis[ABS_GAS] = 0;
-            }
             emit3(EV_SYN, SYN_REPORT, 0);
             last_axis[code] = 0;
         }
@@ -509,14 +496,10 @@ static void process_event(struct pad *p, int pidx, struct input_event *ev)
                 }
                 if (mapped == BTN_TL2 && !pad_has_analog_lt(p)) {
                     last_axis[ABS_Z] = 255;
-                    last_axis[ABS_BRAKE] = 255;
                     emit3(EV_ABS, ABS_Z, 255);
-                    emit3(EV_ABS, ABS_BRAKE, 255);
                 } else if (mapped == BTN_TR2 && !pad_has_analog_rt(p)) {
                     last_axis[ABS_RZ] = 255;
-                    last_axis[ABS_GAS] = 255;
                     emit3(EV_ABS, ABS_RZ, 255);
-                    emit3(EV_ABS, ABS_GAS, 255);
                 }
             }
         } else {
@@ -533,14 +516,10 @@ static void process_event(struct pad *p, int pidx, struct input_event *ev)
                     bit_clear(last_union, mapped);
                     if (mapped == BTN_TL2 && !pad_has_analog_lt(p)) {
                         last_axis[ABS_Z] = 0;
-                        last_axis[ABS_BRAKE] = 0;
                         emit3(EV_ABS, ABS_Z, 0);
-                        emit3(EV_ABS, ABS_BRAKE, 0);
                     } else if (mapped == BTN_TR2 && !pad_has_analog_rt(p)) {
                         last_axis[ABS_RZ] = 0;
-                        last_axis[ABS_GAS] = 0;
                         emit3(EV_ABS, ABS_RZ, 0);
-                        emit3(EV_ABS, ABS_GAS, 0);
                     }
                 }
             }
@@ -560,15 +539,6 @@ static void process_event(struct pad *p, int pidx, struct input_event *ev)
             if (scaled != last_axis[out]) {
                 last_axis[out] = scaled;
                 emit3(EV_ABS, out, scaled);
-                if (out == ABS_Z || out == ABS_BRAKE) {
-                    int alt = (out == ABS_Z) ? ABS_BRAKE : ABS_Z;
-                    last_axis[alt] = scaled;
-                    emit3(EV_ABS, alt, scaled);
-                } else if (out == ABS_RZ || out == ABS_GAS) {
-                    int alt = (out == ABS_RZ) ? ABS_GAS : ABS_RZ;
-                    last_axis[alt] = scaled;
-                    emit3(EV_ABS, alt, scaled);
-                }
                 emit3(EV_SYN, SYN_REPORT, 0);
             }
         }

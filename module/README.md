@@ -174,6 +174,6 @@ Built on the JoyMerge architecture (uinput merging on Android). Fusion Controlle
 
 ---
 
-**Version:** 2.4.0  
+**Version:** 2.4.1  
 **Tested on:** Retroid Pocket 5 (Android 13, Magisk 27.0)  
 **Requirements:** Kernel with `CONFIG_INPUT_UINPUT=y`, root (Magisk/KernelSU/APatch)

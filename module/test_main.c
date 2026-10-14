@@ -138,17 +138,19 @@ int main(void) {
     T("Z does not route to Z when brake present", (pbz.out_code[ABS_Z] != ABS_Z), 1);
     T("amb_z cleared by brake", pbz.amb_z, 0);
 
-    /* virtual device declares ABS_BRAKE and ABS_GAS with range 0..255 */
-    T("fusion has ABS_BRAKE", fusion_has_axis(ABS_BRAKE), 1);
-    T("fusion has ABS_GAS",   fusion_has_axis(ABS_GAS),   1);
+    /* virtual device declares standard Xbox 360 axes ABS_Z and ABS_RZ with range 0..255 */
+    T("fusion has ABS_Z",  fusion_has_axis(ABS_Z),  1);
+    T("fusion has ABS_RZ", fusion_has_axis(ABS_RZ), 1);
+    T("fusion has no ABS_BRAKE", fusion_has_axis(ABS_BRAKE), 0);
+    T("fusion has no ABS_GAS",   fusion_has_axis(ABS_GAS),   0);
     int f_mn = -1, f_mx = -1;
-    fusion_axis_range(ABS_BRAKE, &f_mn, &f_mx);
-    T("fusion ABS_BRAKE min", f_mn, 0);
-    T("fusion ABS_BRAKE max", f_mx, 255);
+    fusion_axis_range(ABS_Z, &f_mn, &f_mx);
+    T("fusion ABS_Z min", f_mn, 0);
+    T("fusion ABS_Z max", f_mx, 255);
     f_mn = -1; f_mx = -1;
-    fusion_axis_range(ABS_GAS, &f_mn, &f_mx);
-    T("fusion ABS_GAS min", f_mn, 0);
-    T("fusion ABS_GAS max", f_mx, 255);
+    fusion_axis_range(ABS_RZ, &f_mn, &f_mx);
+    T("fusion ABS_RZ min", f_mn, 0);
+    T("fusion ABS_RZ max", f_mx, 255);
 
     /* ---- digital trigger synthesis ---- */
     /* Digital pad (e.g. Switch Joy-Con / Pro controller with clicky triggers) */
@@ -159,56 +161,49 @@ int main(void) {
     T("pdig has no analog lt", pad_has_analog_lt(&pdig), 0);
     T("pdig has no analog rt", pad_has_analog_rt(&pdig), 0);
 
-    /* BTN_TL2 press synthesizes ABS_Z 255 and ABS_BRAKE 255 */
-    last_axis[ABS_Z] = 0; last_axis[ABS_BRAKE] = 0;
+    /* BTN_TL2 press synthesizes ABS_Z 255 */
+    last_axis[ABS_Z] = 0;
     struct input_event ev_key;
     memset(&ev_key, 0, sizeof ev_key);
     ev_key.type = EV_KEY; ev_key.code = BTN_TL2; ev_key.value = 1;
     process_event(&pdig, 0, &ev_key);
     T("digital TL2 press -> ABS_Z 255",     last_axis[ABS_Z], 255);
-    T("digital TL2 press -> ABS_BRAKE 255", last_axis[ABS_BRAKE], 255);
 
-    /* BTN_TL2 release resets ABS_Z and ABS_BRAKE to 0 */
+    /* BTN_TL2 release resets ABS_Z to 0 */
     ev_key.value = 0;
     process_event(&pdig, 0, &ev_key);
     T("digital TL2 release -> ABS_Z 0",     last_axis[ABS_Z], 0);
-    T("digital TL2 release -> ABS_BRAKE 0", last_axis[ABS_BRAKE], 0);
 
-    /* BTN_TR2 press synthesizes ABS_RZ 255 and ABS_GAS 255 */
-    last_axis[ABS_RZ] = 0; last_axis[ABS_GAS] = 0;
+    /* BTN_TR2 press synthesizes ABS_RZ 255 */
+    last_axis[ABS_RZ] = 0;
     ev_key.code = BTN_TR2; ev_key.value = 1;
     process_event(&pdig, 0, &ev_key);
     T("digital TR2 press -> ABS_RZ 255",  last_axis[ABS_RZ], 255);
-    T("digital TR2 press -> ABS_GAS 255", last_axis[ABS_GAS], 255);
 
-    /* BTN_TR2 release resets ABS_RZ and ABS_GAS to 0 */
+    /* BTN_TR2 release resets ABS_RZ to 0 */
     ev_key.value = 0;
     process_event(&pdig, 0, &ev_key);
     T("digital TR2 release -> ABS_RZ 0",  last_axis[ABS_RZ], 0);
-    T("digital TR2 release -> ABS_GAS 0", last_axis[ABS_GAS], 0);
 
     /* Analog pad (pbg): BTN_TL2 press does NOT synthesize 255 spike */
-    last_axis[ABS_Z] = 0; last_axis[ABS_BRAKE] = 0;
+    last_axis[ABS_Z] = 0;
     ev_key.code = BTN_TL2; ev_key.value = 1;
     process_event(&pbg, 0, &ev_key);
     T("analog pad TL2 press no spike ABS_Z",     last_axis[ABS_Z], 0);
-    T("analog pad TL2 press no spike ABS_BRAKE", last_axis[ABS_BRAKE], 0);
     ev_key.value = 0;
     process_event(&pbg, 0, &ev_key);
 
-    /* Analog pad ABS_BRAKE motion event updates both ABS_Z and ABS_BRAKE */
+    /* Analog pad ABS_BRAKE motion event updates ABS_Z */
     struct input_event ev_abs;
     memset(&ev_abs, 0, sizeof ev_abs);
     ev_abs.type = EV_ABS; ev_abs.code = ABS_BRAKE; ev_abs.value = 128;
     process_event(&pbg, 0, &ev_abs);
     T("analog brake event -> ABS_Z scaled",     last_axis[ABS_Z], 128);
-    T("analog brake event -> ABS_BRAKE scaled", last_axis[ABS_BRAKE], 128);
 
-    /* Analog pad ABS_GAS motion event updates both ABS_RZ and ABS_GAS */
+    /* Analog pad ABS_GAS motion event updates ABS_RZ */
     ev_abs.code = ABS_GAS; ev_abs.value = 200;
     process_event(&pbg, 0, &ev_abs);
     T("analog gas event -> ABS_RZ scaled",  last_axis[ABS_RZ], 200);
-    T("analog gas event -> ABS_GAS scaled", last_axis[ABS_GAS], 200);
 
     /* rescan_devices: clears pads and resets state */
     npads = 1; pads[0].fd = -1;

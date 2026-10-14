@@ -1,7 +1,7 @@
 SKIPUNZIP=0
 
 ui_print " "
-ui_print "- Fusion Controller v2.4.0"
+ui_print "- Fusion Controller v2.4.1"
 
 if [ "$ARCH" != "arm64" ]; then
   ui_print "! Unsupported architecture: $ARCH"
@@ -75,7 +75,7 @@ if [ ! -f /data/adb/fusion-apps.conf ]; then
     > /data/adb/fusion-apps.conf
 fi
 
-echo "$(date) customize.sh: installed v2.4.0" >> /data/adb/fusion.log
+echo "$(date) customize.sh: installed v2.4.1" >> /data/adb/fusion.log
 
 ui_print "- Testing binary..."
 RC=0
