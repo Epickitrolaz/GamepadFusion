@@ -52,7 +52,7 @@
 #define BTN_TRIGGER_HAPPY24 (BTN_TRIGGER_HAPPY1 + 23)
 #endif
 
-#define VERSION     "2.3.0"
+#define VERSION     "2.4.0"
 #define MAX_PADS    16
 #define MAX_USER_MAP 256
 #define FF_SLOTS    16
@@ -97,6 +97,7 @@ struct pad {
     unsigned char z_evt_seen, rz_evt_seen; /* ambiguous axis has emitted events */
     time_t z_last_evt, rz_last_evt;        /* last event time (quiet window) */
     unsigned char z_is_stick, rz_is_stick; /* authoritative reroute result */
+    unsigned char z_is_trigger, rz_is_trigger; /* authoritative trigger result */
     unsigned long keys[KEY_MAX / BITS_PER_UL + 1];
     enum layout_mode layout;
 };
@@ -188,6 +189,7 @@ static unsigned short remap_layout(struct pad *p, unsigned short code)
 /* ------------------------------------------------- fusion axis capabilities */
 static const int fusion_axes[] = {
     ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ,
+    ABS_BRAKE, ABS_GAS,
     ABS_HAT0X, ABS_HAT0Y, ABS_HAT1X, ABS_HAT1Y, ABS_HAT2X, ABS_HAT2Y,
 };
 
@@ -205,6 +207,7 @@ static void fusion_axis_range(int code, int *mn, int *mx)
     case ABS_X: case ABS_Y: case ABS_RX: case ABS_RY:
         *mn = -32768; *mx = 32767; break;
     case ABS_Z: case ABS_RZ:
+    case ABS_BRAKE: case ABS_GAS:
         *mn = 0; *mx = 255; break;
     default:
         *mn = -1; *mx = 1; break;
@@ -313,10 +316,31 @@ static void handle_ff(void)
 }
 
 /* --------------------------------------------------------- event processing */
+static int pad_has_analog_lt(const struct pad *p)
+{
+    int i;
+    for (i = 0; i < ABS_CNT; i++) {
+        if (bit_test(p->axbits, i) && (p->out_code[i] == ABS_Z || p->out_code[i] == ABS_BRAKE))
+            return 1;
+    }
+    return 0;
+}
+
+static int pad_has_analog_rt(const struct pad *p)
+{
+    int i;
+    for (i = 0; i < ABS_CNT; i++) {
+        if (bit_test(p->axbits, i) && (p->out_code[i] == ABS_RZ || p->out_code[i] == ABS_GAS))
+            return 1;
+    }
+    return 0;
+}
+
 static void release_pad_keys(int idx)
 {
     struct pad *p = &pads[idx];
     unsigned i;
+    int released_any = 0;
     for (i = 0; i < KEY_MAX; i++) {
         if (bit_test(p->keys, (int)i)) {
             int j, any = 0;
@@ -326,9 +350,23 @@ static void release_pad_keys(int idx)
             if (!any && bit_test(last_union, (int)i)) {
                 emit3(EV_KEY, (int)i, 0);
                 bit_clear(last_union, (int)i);
+                released_any = 1;
+                if ((int)i == BTN_TL2 && !pad_has_analog_lt(p)) {
+                    last_axis[ABS_Z] = 0;
+                    last_axis[ABS_BRAKE] = 0;
+                    emit3(EV_ABS, ABS_Z, 0);
+                    emit3(EV_ABS, ABS_BRAKE, 0);
+                } else if ((int)i == BTN_TR2 && !pad_has_analog_rt(p)) {
+                    last_axis[ABS_RZ] = 0;
+                    last_axis[ABS_GAS] = 0;
+                    emit3(EV_ABS, ABS_RZ, 0);
+                    emit3(EV_ABS, ABS_GAS, 0);
+                }
             }
         }
     }
+    if (released_any)
+        emit3(EV_SYN, SYN_REPORT, 0);
 }
 
 /* --- dynamic stick/trigger disambiguation -----------------------------------
@@ -369,6 +407,8 @@ static void classify_axis(struct pad *p, int code, int observed)
 
     if (observed <= lo + span / 8) {
         *ambp = 0;                    /* parks at min: real trigger */
+        if (code == ABS_Z) p->z_is_trigger = 1;
+        else p->rz_is_trigger = 1;
         a->neu = lo;
         logmsg("%s: %s parks at min - confirmed trigger",
                p->name, code == ABS_Z ? "Z" : "RZ");
@@ -378,6 +418,8 @@ static void classify_axis(struct pad *p, int code, int observed)
         phantom = (code == ABS_Z) ? p->rx_seen : p->ry_seen;
         if (phantom) {
             *ambp = 0;                /* real stick lives on RX/RY: keep trigger */
+            if (code == ABS_Z) p->z_is_trigger = 1;
+            else p->rz_is_trigger = 1;
             a->neu = lo;
             logmsg("%s: %s parks mid but %s active - keeping as trigger",
                    p->name, code == ABS_Z ? "Z" : "RZ", code == ABS_Z ? "RX" : "RY");
@@ -389,6 +431,13 @@ static void classify_axis(struct pad *p, int code, int observed)
         p->out_code[out]  = -1;       /* silent phantom axis loses */
         if (last_axis[code] != 0) {   /* release any stale L2/R2 */
             emit3(EV_ABS, code, 0);
+            if (code == ABS_Z) {
+                emit3(EV_ABS, ABS_BRAKE, 0);
+                last_axis[ABS_BRAKE] = 0;
+            } else if (code == ABS_RZ) {
+                emit3(EV_ABS, ABS_GAS, 0);
+                last_axis[ABS_GAS] = 0;
+            }
             emit3(EV_SYN, SYN_REPORT, 0);
             last_axis[code] = 0;
         }
@@ -458,6 +507,17 @@ static void process_event(struct pad *p, int pidx, struct input_event *ev)
                     emit3(EV_KEY, mapped, 1);
                     bit_set(last_union, mapped);
                 }
+                if (mapped == BTN_TL2 && !pad_has_analog_lt(p)) {
+                    last_axis[ABS_Z] = 255;
+                    last_axis[ABS_BRAKE] = 255;
+                    emit3(EV_ABS, ABS_Z, 255);
+                    emit3(EV_ABS, ABS_BRAKE, 255);
+                } else if (mapped == BTN_TR2 && !pad_has_analog_rt(p)) {
+                    last_axis[ABS_RZ] = 255;
+                    last_axis[ABS_GAS] = 255;
+                    emit3(EV_ABS, ABS_RZ, 255);
+                    emit3(EV_ABS, ABS_GAS, 255);
+                }
             }
         } else {
             if (bit_test(p->keys, mapped)) {
@@ -471,6 +531,17 @@ static void process_event(struct pad *p, int pidx, struct input_event *ev)
                 if (bit_test(last_union, mapped)) {
                     emit3(EV_KEY, mapped, 0);
                     bit_clear(last_union, mapped);
+                    if (mapped == BTN_TL2 && !pad_has_analog_lt(p)) {
+                        last_axis[ABS_Z] = 0;
+                        last_axis[ABS_BRAKE] = 0;
+                        emit3(EV_ABS, ABS_Z, 0);
+                        emit3(EV_ABS, ABS_BRAKE, 0);
+                    } else if (mapped == BTN_TR2 && !pad_has_analog_rt(p)) {
+                        last_axis[ABS_RZ] = 0;
+                        last_axis[ABS_GAS] = 0;
+                        emit3(EV_ABS, ABS_RZ, 0);
+                        emit3(EV_ABS, ABS_GAS, 0);
+                    }
                 }
             }
         }
@@ -489,6 +560,15 @@ static void process_event(struct pad *p, int pidx, struct input_event *ev)
             if (scaled != last_axis[out]) {
                 last_axis[out] = scaled;
                 emit3(EV_ABS, out, scaled);
+                if (out == ABS_Z || out == ABS_BRAKE) {
+                    int alt = (out == ABS_Z) ? ABS_BRAKE : ABS_Z;
+                    last_axis[alt] = scaled;
+                    emit3(EV_ABS, alt, scaled);
+                } else if (out == ABS_RZ || out == ABS_GAS) {
+                    int alt = (out == ABS_RZ) ? ABS_GAS : ABS_RZ;
+                    last_axis[alt] = scaled;
+                    emit3(EV_ABS, alt, scaled);
+                }
                 emit3(EV_SYN, SYN_REPORT, 0);
             }
         }
@@ -528,7 +608,10 @@ static void fill_axes(int fd, struct pad *p)
          * (left stick read 0.5/0.5) and broke every rest-relative heuristic.
          * Sticks and hats park mid-range, triggers park at min - both are
          * pure functions of (min, max), so capture nothing. */
-        p->ax[i].neu = (p->ax[i].min + p->ax[i].max) / 2;
+        if (i == ABS_BRAKE || i == ABS_GAS)
+            p->ax[i].neu = p->ax[i].min;
+        else
+            p->ax[i].neu = (p->ax[i].min + p->ax[i].max) / 2;
     }
     memset(p->axbits, 0, sizeof p->axbits);
     ioctl(fd, EVIOCGBIT(EV_ABS, sizeof p->axbits), p->axbits);
@@ -537,6 +620,14 @@ static void fill_axes(int fd, struct pad *p)
      * mid-range rest while undecided so the classifier can see movement */
     if (p->out_code[ABS_Z]  == ABS_Z && !p->amb_z)  p->ax[ABS_Z].neu  = p->ax[ABS_Z].min;
     if (p->out_code[ABS_RZ] == ABS_RZ && !p->amb_rz) p->ax[ABS_RZ].neu = p->ax[ABS_RZ].min;
+    if (p->out_code[ABS_BRAKE] == ABS_Z) {
+        p->ax[ABS_BRAKE].neu = p->ax[ABS_BRAKE].min;
+        p->amb_z = 0;
+    }
+    if (p->out_code[ABS_GAS] == ABS_RZ) {
+        p->ax[ABS_GAS].neu = p->ax[ABS_GAS].min;
+        p->amb_rz = 0;
+    }
 }
 
 /* --- axis routing -----------------------------------------------------------
@@ -544,7 +635,11 @@ static void fill_axes(int fd, struct pad *p)
  * (old DirectInput convention). Android's Generic.kl reads ABS_Z/ABS_RZ as
  * L2/R2, so unless the pad also has ABS_RX/ABS_RY, a center-resting Z/RZ is
  * rerouted to the right-stick slots. Otherwise Z/RZ stay triggers (one-sided,
- * scaled relative to their rest point). */
+ * scaled relative to their rest point).
+ * Modern Bluetooth and handheld gamepads declare triggers under the HID
+ * Simulation page (Brake and Accelerator), mapped by Linux/Android to
+ * ABS_BRAKE (LT) and ABS_GAS (RT). These are unipolar triggers mapped to
+ * ABS_Z and ABS_RZ respectively. */
 static void route_axes(struct pad *p)
 {
     int i;
@@ -561,16 +656,36 @@ static void route_axes(struct pad *p)
             p->out_code[i] = i;
             break;
         case ABS_Z:
+            if (bit_test(p->axbits, ABS_BRAKE)) {
+                if (!has_rstick) p->out_code[i] = ABS_RX;
+                break;
+            }
             if (p->z_is_stick) { p->out_code[i] = ABS_RX; break; }
+            if (p->z_is_trigger) { p->out_code[i] = ABS_Z; p->amb_z = 0; break; }
             if (!has_rstick) { p->out_code[i] = ABS_RX; break; }  /* DInput: Z is stick X */
             p->out_code[i] = ABS_Z;      /* assume trigger; classifier decides */
             p->amb_z = 1;
             break;
         case ABS_RZ:
+            if (bit_test(p->axbits, ABS_GAS)) {
+                if (!has_rstick) p->out_code[i] = ABS_RY;
+                break;
+            }
             if (p->rz_is_stick) { p->out_code[i] = ABS_RY; break; }
+            if (p->rz_is_trigger) { p->out_code[i] = ABS_RZ; p->amb_rz = 0; break; }
             if (!has_rstick) { p->out_code[i] = ABS_RY; break; }  /* DInput: RZ is stick Y */
             p->out_code[i] = ABS_RZ;
             p->amb_rz = 1;
+            break;
+        case ABS_BRAKE:
+            p->out_code[i] = ABS_Z;
+            p->ax[i].neu = p->ax[i].min;
+            p->amb_z = 0;
+            break;
+        case ABS_GAS:
+            p->out_code[i] = ABS_RZ;
+            p->ax[i].neu = p->ax[i].min;
+            p->amb_rz = 0;
             break;
         default:
             break;   /* unrouted axes are dropped */

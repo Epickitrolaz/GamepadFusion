@@ -113,6 +113,103 @@ int main(void) {
     T("dinput garbage-neu: Z -> RX", e7.out_code[ABS_Z], ABS_RX);
     T("dinput garbage-neu: RZ -> RY", e7.out_code[ABS_RZ], ABS_RY);
 
+    /* ---- ABS_BRAKE and ABS_GAS (modern Bluetooth & handheld triggers) ---- */
+    struct pad pbg; memset(&pbg, 0, sizeof pbg);
+    set_axis(&pbg, ABS_X, -32768, 32767, 0); set_axis(&pbg, ABS_Y, -32768, 32767, 0);
+    set_axis(&pbg, ABS_RX, -32768, 32767, 0); set_axis(&pbg, ABS_RY, -32768, 32767, 0);
+    set_axis(&pbg, ABS_BRAKE, 0, 255, 128); set_axis(&pbg, ABS_GAS, 0, 255, 128);
+    route_axes(&pbg);
+    T("brake -> Z", pbg.out_code[ABS_BRAKE], ABS_Z);
+    T("gas -> RZ",  pbg.out_code[ABS_GAS],   ABS_RZ);
+    T("brake neu reset to min", pbg.ax[ABS_BRAKE].neu, 0);
+    T("gas neu reset to min",   pbg.ax[ABS_GAS].neu,   0);
+    T("brake not ambiguous",    pbg.amb_z,  0);
+    T("gas not ambiguous",      pbg.amb_rz, 0);
+    T("pbg has analog lt",      pad_has_analog_lt(&pbg), 1);
+    T("pbg has analog rt",      pad_has_analog_rt(&pbg), 1);
+
+    /* pad with ABS_BRAKE and ABS_Z: ABS_BRAKE takes precedence as LT */
+    struct pad pbz; memset(&pbz, 0, sizeof pbz);
+    set_axis(&pbz, ABS_X, -32768, 32767, 0); set_axis(&pbz, ABS_Y, -32768, 32767, 0);
+    set_axis(&pbz, ABS_RX, -32768, 32767, 0); set_axis(&pbz, ABS_RY, -32768, 32767, 0);
+    set_axis(&pbz, ABS_Z, 0, 255, 128); set_axis(&pbz, ABS_BRAKE, 0, 255, 128);
+    route_axes(&pbz);
+    T("brake takes precedence over Z", pbz.out_code[ABS_BRAKE], ABS_Z);
+    T("Z does not route to Z when brake present", (pbz.out_code[ABS_Z] != ABS_Z), 1);
+    T("amb_z cleared by brake", pbz.amb_z, 0);
+
+    /* virtual device declares ABS_BRAKE and ABS_GAS with range 0..255 */
+    T("fusion has ABS_BRAKE", fusion_has_axis(ABS_BRAKE), 1);
+    T("fusion has ABS_GAS",   fusion_has_axis(ABS_GAS),   1);
+    int f_mn = -1, f_mx = -1;
+    fusion_axis_range(ABS_BRAKE, &f_mn, &f_mx);
+    T("fusion ABS_BRAKE min", f_mn, 0);
+    T("fusion ABS_BRAKE max", f_mx, 255);
+    f_mn = -1; f_mx = -1;
+    fusion_axis_range(ABS_GAS, &f_mn, &f_mx);
+    T("fusion ABS_GAS min", f_mn, 0);
+    T("fusion ABS_GAS max", f_mx, 255);
+
+    /* ---- digital trigger synthesis ---- */
+    /* Digital pad (e.g. Switch Joy-Con / Pro controller with clicky triggers) */
+    struct pad pdig; memset(&pdig, 0, sizeof pdig);
+    set_axis(&pdig, ABS_X, -32768, 32767, 0); set_axis(&pdig, ABS_Y, -32768, 32767, 0);
+    set_axis(&pdig, ABS_RX, -32768, 32767, 0); set_axis(&pdig, ABS_RY, -32768, 32767, 0);
+    route_axes(&pdig);
+    T("pdig has no analog lt", pad_has_analog_lt(&pdig), 0);
+    T("pdig has no analog rt", pad_has_analog_rt(&pdig), 0);
+
+    /* BTN_TL2 press synthesizes ABS_Z 255 and ABS_BRAKE 255 */
+    last_axis[ABS_Z] = 0; last_axis[ABS_BRAKE] = 0;
+    struct input_event ev_key;
+    memset(&ev_key, 0, sizeof ev_key);
+    ev_key.type = EV_KEY; ev_key.code = BTN_TL2; ev_key.value = 1;
+    process_event(&pdig, 0, &ev_key);
+    T("digital TL2 press -> ABS_Z 255",     last_axis[ABS_Z], 255);
+    T("digital TL2 press -> ABS_BRAKE 255", last_axis[ABS_BRAKE], 255);
+
+    /* BTN_TL2 release resets ABS_Z and ABS_BRAKE to 0 */
+    ev_key.value = 0;
+    process_event(&pdig, 0, &ev_key);
+    T("digital TL2 release -> ABS_Z 0",     last_axis[ABS_Z], 0);
+    T("digital TL2 release -> ABS_BRAKE 0", last_axis[ABS_BRAKE], 0);
+
+    /* BTN_TR2 press synthesizes ABS_RZ 255 and ABS_GAS 255 */
+    last_axis[ABS_RZ] = 0; last_axis[ABS_GAS] = 0;
+    ev_key.code = BTN_TR2; ev_key.value = 1;
+    process_event(&pdig, 0, &ev_key);
+    T("digital TR2 press -> ABS_RZ 255",  last_axis[ABS_RZ], 255);
+    T("digital TR2 press -> ABS_GAS 255", last_axis[ABS_GAS], 255);
+
+    /* BTN_TR2 release resets ABS_RZ and ABS_GAS to 0 */
+    ev_key.value = 0;
+    process_event(&pdig, 0, &ev_key);
+    T("digital TR2 release -> ABS_RZ 0",  last_axis[ABS_RZ], 0);
+    T("digital TR2 release -> ABS_GAS 0", last_axis[ABS_GAS], 0);
+
+    /* Analog pad (pbg): BTN_TL2 press does NOT synthesize 255 spike */
+    last_axis[ABS_Z] = 0; last_axis[ABS_BRAKE] = 0;
+    ev_key.code = BTN_TL2; ev_key.value = 1;
+    process_event(&pbg, 0, &ev_key);
+    T("analog pad TL2 press no spike ABS_Z",     last_axis[ABS_Z], 0);
+    T("analog pad TL2 press no spike ABS_BRAKE", last_axis[ABS_BRAKE], 0);
+    ev_key.value = 0;
+    process_event(&pbg, 0, &ev_key);
+
+    /* Analog pad ABS_BRAKE motion event updates both ABS_Z and ABS_BRAKE */
+    struct input_event ev_abs;
+    memset(&ev_abs, 0, sizeof ev_abs);
+    ev_abs.type = EV_ABS; ev_abs.code = ABS_BRAKE; ev_abs.value = 128;
+    process_event(&pbg, 0, &ev_abs);
+    T("analog brake event -> ABS_Z scaled",     last_axis[ABS_Z], 128);
+    T("analog brake event -> ABS_BRAKE scaled", last_axis[ABS_BRAKE], 128);
+
+    /* Analog pad ABS_GAS motion event updates both ABS_RZ and ABS_GAS */
+    ev_abs.code = ABS_GAS; ev_abs.value = 200;
+    process_event(&pbg, 0, &ev_abs);
+    T("analog gas event -> ABS_RZ scaled",  last_axis[ABS_RZ], 200);
+    T("analog gas event -> ABS_GAS scaled", last_axis[ABS_GAS], 200);
+
     /* rescan_devices: clears pads and resets state */
     npads = 1; pads[0].fd = -1;
     rescan_devices();
