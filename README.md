@@ -14,7 +14,7 @@ Built and tested on a **Retroid Pocket 5** (internal pad + 8BitDo Ultimate 2C).
 > **This project is experimental software.** It installs a system-level daemon
 > that grabs raw input devices — expect bugs. You flash/install it entirely at
 > your own risk. **I am not responsible for any damage, data loss, or
-> bootloops.** Keep a bootloop protector (Magisk's built-in one) enabled, and
+> bootloops.** Keep a bootloop protector enabled, and
 > know how to recover your device before installing.
 
 ## How it works
