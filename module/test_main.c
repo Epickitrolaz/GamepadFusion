@@ -210,6 +210,68 @@ int main(void) {
     rescan_devices();
     T("rescan_devices: npads reset", npads, 0);
 
+    /* ---- layout remapping tests ---- */
+    struct pad pl; memset(&pl, 0, sizeof pl);
+    pl.layout = LAYOUT_DEFAULT;
+    T("layout default: A is A", remap_layout(&pl, BTN_SOUTH), BTN_SOUTH);
+    T("layout default: B is B", remap_layout(&pl, BTN_EAST),  BTN_EAST);
+    T("layout default: X is X", remap_layout(&pl, BTN_WEST),  BTN_WEST);
+    T("layout default: Y is Y", remap_layout(&pl, BTN_NORTH), BTN_NORTH);
+
+    pl.layout = LAYOUT_NINTENDO;
+    T("layout nintendo: A -> B", remap_layout(&pl, BTN_SOUTH), BTN_EAST);
+    T("layout nintendo: B -> A", remap_layout(&pl, BTN_EAST),  BTN_SOUTH);
+    T("layout nintendo: X -> Y", remap_layout(&pl, BTN_WEST),  BTN_NORTH);
+    T("layout nintendo: Y -> X", remap_layout(&pl, BTN_NORTH), BTN_WEST);
+
+    pl.layout = LAYOUT_SWAP_AB;
+    T("layout swap_ab: A -> B", remap_layout(&pl, BTN_SOUTH), BTN_EAST);
+    T("layout swap_ab: B -> A", remap_layout(&pl, BTN_EAST),  BTN_SOUTH);
+    T("layout swap_ab: X is X", remap_layout(&pl, BTN_WEST),  BTN_WEST);
+    T("layout swap_ab: Y is Y", remap_layout(&pl, BTN_NORTH), BTN_NORTH);
+
+    pl.layout = LAYOUT_SWAP_XY;
+    T("layout swap_xy: A is A", remap_layout(&pl, BTN_SOUTH), BTN_SOUTH);
+    T("layout swap_xy: B is B", remap_layout(&pl, BTN_EAST),  BTN_EAST);
+    T("layout swap_xy: X -> Y", remap_layout(&pl, BTN_WEST),  BTN_NORTH);
+    T("layout swap_xy: Y -> X", remap_layout(&pl, BTN_NORTH), BTN_WEST);
+
+    /* custom button remapping */
+    pl.layout = LAYOUT_CUSTOM;
+    parse_custom_map(&pl, "304->310,305->311");
+    T("custom map: A -> LB", remap_layout(&pl, BTN_SOUTH), BTN_TL);
+    T("custom map: B -> RB", remap_layout(&pl, BTN_EAST),  BTN_TR);
+    T("custom map: unmapped X is X", remap_layout(&pl, BTN_WEST), BTN_WEST);
+
+    char custom_out[128];
+    format_custom_map(&pl, custom_out, sizeof custom_out);
+    T("format custom map non-empty", strlen(custom_out) > 0, 1);
+
+    /* ---- persistence test: save & load layout across reboot ---- */
+    LAYOUTS_PATH = "/tmp/fusion_test_layouts.conf";
+    unlink(LAYOUTS_PATH);
+    save_pad_layout("Xbox Wireless Controller", "NINTENDO");
+    save_pad_layout("8BitDo Ultimate 2C", "CUSTOM:304->305,305->304");
+
+    struct pad test_pad1; memset(&test_pad1, 0, sizeof test_pad1);
+    snprintf(test_pad1.name, sizeof test_pad1.name, "Xbox Wireless Controller");
+    load_pad_layout(&test_pad1);
+    T("persistence: xbox loaded NINTENDO layout", test_pad1.layout, LAYOUT_NINTENDO);
+    T("persistence: xbox remaps A -> B", remap_layout(&test_pad1, BTN_SOUTH), BTN_EAST);
+
+    struct pad test_pad2; memset(&test_pad2, 0, sizeof test_pad2);
+    snprintf(test_pad2.name, sizeof test_pad2.name, "8BitDo Ultimate 2C");
+    load_pad_layout(&test_pad2);
+    T("persistence: 8bitdo loaded CUSTOM layout", test_pad2.layout, LAYOUT_CUSTOM);
+    T("persistence: 8bitdo custom map A -> B", remap_layout(&test_pad2, BTN_SOUTH), BTN_EAST);
+    T("persistence: 8bitdo custom map B -> A", remap_layout(&test_pad2, BTN_EAST),  BTN_SOUTH);
+
+    /* update pad1 layout and verify persistence update */
+    save_pad_layout("Xbox Wireless Controller", "XBOX");
+    load_pad_layout(&test_pad1);
+    T("persistence: xbox updated to XBOX", test_pad1.layout, LAYOUT_XBOX);
+    unlink(LAYOUTS_PATH);
+
     printf(fails ? "== %d FAILURES ==\n" : "== all pass ==\n", fails);
     return fails != 0;
 }

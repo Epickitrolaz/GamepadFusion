@@ -14,6 +14,7 @@ sleep 3
 # exec bits are unreliable on some ROMs' module dirs - force them
 chmod 0755 "$MODDIR" "$MODDIR/fusiond" "$MODDIR/fusiond-run.sh" 2>/dev/null
 chmod 0755 /data/adb/fusiond /data/adb/fusionctl /data/adb/fusiond-run.sh 2>/dev/null
+chmod 0644 /data/adb/fusion-layouts.conf /data/adb/fusion-apps.conf 2>/dev/null
 
 echo "$(date) service.sh: boot complete, spawning runner" >> "$LOG"
 

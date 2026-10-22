@@ -34,8 +34,9 @@ identity — the most widely recognized pad in the Android ecosystem).
   times so apps that read every device directly only see the Fusion pad;
   apps that need the real pads get them released while focused via
   `<package>=nohide` rules (`fusion-monitor.sh` + `/data/adb/fusion-apps.conf`)
-- **Per-pad layout remapping** — Nintendo-layout pads get their A/B, X/Y
-  swapped to standard Xbox order in real time
+- **Per-pad layout remapping & reboot persistence** — remap controllers between Xbox
+  and Nintendo layouts (swap A↔B and X↔Y) or customize button mapping in real time;
+  settings persist across reboots via `/data/adb/fusion-layouts.conf`
 - **System key passthrough** — Back / Home / Menu / Volume keys survive the
   merge (the RP5's back button works)
 - **Rumble merge** — force feedback from any pad is replayed to all pads
@@ -48,8 +49,9 @@ identity — the most widely recognized pad in the Android ecosystem).
 ## Install
 
 1. Flash the module zip from the [latest release](https://github.com/Epickitrolaz/GamepadFusion/releases) in Magisk and reboot.
-2. (Optional) Install `FusionControl.apk` from Releases — toggle hide mode,
-   per-pad layouts, restart/rescan, and view connected pads from a normal app, no terminal.
+2. (Optional) Install `FusionControl.apk` from Releases — view all connected gamepads,
+   open the interactive remapping menu (remap Xbox and Nintendo controls, persist across reboot),
+   toggle hide mode, restart/rescan, and manage per-app rules without a terminal.
    It also ships **Quick Settings tiles**:
    - **Fusion Hide**: toggle hide mode (grab physical pads / Fusion-only) straight from the shade.
    - **Fusion Restart**: restart the daemon and rescan pads with one tap to fix axes incorrectly recognized as triggers.

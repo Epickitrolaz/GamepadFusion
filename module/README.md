@@ -11,16 +11,19 @@ Built for devices like the Retroid Pocket 5, this Magisk module creates a "Fusio
 - **v2:** Toggle hide on/off at runtime via socket control
 - Use case: Enable hide for RetroArch (eliminates double-inputs), disable for other apps
 
-### 🔄 Per-Pad Layout Remapping
-- Swap A↔B and X↔Y for Nintendo-style controllers (8BitDo, Switch Pro, etc.)
-- Each pad has independent layout: `NINTENDO | XBOX | DEFAULT`
+### 🔄 Per-Pad Layout Remapping & Reboot Persistence
+- Swap A↔B and X↔Y for Nintendo-style controllers (8BitDo, Switch Pro, etc.), or remap Xbox-style controllers to Nintendo layout and vice-versa
+- Each pad has independent layout: `NINTENDO | XBOX | DEFAULT | SWAP_AB | SWAP_XY | CUSTOM`
 - Applied in real-time, no reboot needed
+- Settings persist across reboots automatically via `/data/adb/fusion-layouts.conf`
+- Dedicated visual remapping menu in the Fusion Control companion app showing all connected gamepads
 
 ### 🔌 Control Socket API
 ```sh
 fusionctl hide on              # Hide physical pads (Fusion only)
 fusionctl hide off             # Restore physical pads
-fusionctl layout 0 NINTENDO    # Remap pad 0 to Nintendo layout
+fusionctl layout 0 NINTENDO    # Remap pad 0 to Nintendo layout (persists across reboot)
+fusionctl remap 0 304->305     # Custom button remap for pad 0 (persists across reboot)
 fusionctl status               # JSON: current state
 ```
 
@@ -89,8 +92,9 @@ Connect to `/data/adb/fusion.sock` (Unix domain, SOCK_STREAM), send text command
 |---------|----------|--------|
 | `HIDE ON` | `OK HIDE ON` | Grab all physical pads via `EVIOCGRAB` |
 | `HIDE OFF` | `OK HIDE OFF` | Release all physical pads |
-| `LAYOUT <idx> <mode>` | `OK LAYOUT ...` | mode = `NINTENDO` \| `XBOX` \| `DEFAULT` |
-| `STATUS` | `{...JSON...}` | Current state: hide_mode, pads array |
+| `LAYOUT <idx> <mode>` | `OK LAYOUT ...` | mode = `NINTENDO` \| `XBOX` \| `DEFAULT` \| `SWAP_AB` \| `SWAP_XY` (persisted) |
+| `REMAP <idx> <map>` | `OK REMAP ...` | Set custom button mapping, e.g. `304->305,305->304` (persisted) |
+| `STATUS` | `{...JSON...}` | Current state: hide_mode, pads array with active layout & mappings |
 | `RESCAN` | `OK RESCAN <n> pads` | Rescan connected gamepads and reset axis disambiguation |
 | `RESTART` | `OK RESTART` | Clean daemon restart and re-enumeration |
 | `QUIT` | `OK QUIT` | Graceful daemon shutdown |

@@ -75,6 +75,18 @@ if [ ! -f /data/adb/fusion-apps.conf ]; then
     > /data/adb/fusion-apps.conf
 fi
 
+if [ ! -f /data/adb/fusion-layouts.conf ]; then
+  printf '%s\n' \
+    '# Fusion Controller - persistent pad layout configurations' \
+    '# Format: <pad_name>=<layout_or_mapping>' \
+    '#' \
+    '# Examples:' \
+    '# Xbox Wireless Controller=NINTENDO' \
+    '# 8BitDo Ultimate 2C=DEFAULT' \
+    > /data/adb/fusion-layouts.conf
+  chmod 0644 /data/adb/fusion-layouts.conf 2>/dev/null
+fi
+
 echo "$(date) customize.sh: installed v2.4.1" >> /data/adb/fusion.log
 
 ui_print "- Testing binary..."

@@ -61,6 +61,7 @@
 
 static const char *FUSION_NAME = "Fusion Controller";
 static const char *MAP_PATH    = "/data/adb/fusion.map";
+static const char *LAYOUTS_PATH = "/data/adb/fusion-layouts.conf";
 static const char *FUSION_PHYS = "fusion-bridge";
 
 static int hide_mode = 1;   /* v2.2.0: hide ON by default (--no-hide starts released) */
@@ -79,7 +80,14 @@ static inline int  bit_test(const unsigned long *a, int b) { return !!(a[b / BIT
 
 struct axis_range { int min, max, neu; };   /* neu = rest value at connect */
 
-enum layout_mode { LAYOUT_DEFAULT, LAYOUT_XBOX, LAYOUT_NINTENDO };
+enum layout_mode {
+    LAYOUT_DEFAULT,
+    LAYOUT_XBOX,
+    LAYOUT_NINTENDO,
+    LAYOUT_SWAP_AB,
+    LAYOUT_SWAP_XY,
+    LAYOUT_CUSTOM
+};
 
 struct pad {
     int fd;
@@ -100,6 +108,7 @@ struct pad {
     unsigned char z_is_trigger, rz_is_trigger; /* authoritative trigger result */
     unsigned long keys[KEY_MAX / BITS_PER_UL + 1];
     enum layout_mode layout;
+    unsigned short custom_map[KEY_MAX];
 };
 
 static struct pad pads[MAX_PADS];
@@ -174,6 +183,11 @@ static void load_user_map(const char *path)
 /* ------------------------------------------------ per-pad layout remapping */
 static unsigned short remap_layout(struct pad *p, unsigned short code)
 {
+    if (p->layout == LAYOUT_CUSTOM) {
+        if (code < KEY_MAX && p->custom_map[code])
+            return p->custom_map[code];
+        return code;
+    }
     if (p->layout == LAYOUT_NINTENDO) {
         /* Nintendo: B bottom, A right, Y left, X top
          * Standard (Xbox): A bottom, B right, X left, Y top */
@@ -181,9 +195,208 @@ static unsigned short remap_layout(struct pad *p, unsigned short code)
         if (code == BTN_EAST)  return BTN_SOUTH;  /* B -> A */
         if (code == BTN_WEST)  return BTN_NORTH;  /* X -> Y */
         if (code == BTN_NORTH) return BTN_WEST;   /* Y -> X */
+    } else if (p->layout == LAYOUT_SWAP_AB) {
+        if (code == BTN_SOUTH) return BTN_EAST;
+        if (code == BTN_EAST)  return BTN_SOUTH;
+    } else if (p->layout == LAYOUT_SWAP_XY) {
+        if (code == BTN_WEST)  return BTN_NORTH;
+        if (code == BTN_NORTH) return BTN_WEST;
     }
     /* LAYOUT_XBOX and LAYOUT_DEFAULT: identity (standard Xbox order) */
     return code;
+}
+
+static enum layout_mode parse_layout_mode(const char *str)
+{
+    if (!str) return LAYOUT_DEFAULT;
+    if (strcasecmp(str, "NINTENDO") == 0) return LAYOUT_NINTENDO;
+    if (strcasecmp(str, "XBOX") == 0)     return LAYOUT_XBOX;
+    if (strcasecmp(str, "DEFAULT") == 0)  return LAYOUT_DEFAULT;
+    if (strcasecmp(str, "SWAP_AB") == 0)  return LAYOUT_SWAP_AB;
+    if (strcasecmp(str, "SWAP_XY") == 0)  return LAYOUT_SWAP_XY;
+    if (strncasecmp(str, "CUSTOM", 6) == 0) return LAYOUT_CUSTOM;
+    return LAYOUT_DEFAULT;
+}
+
+static const char *layout_mode_str(enum layout_mode mode)
+{
+    switch (mode) {
+    case LAYOUT_NINTENDO: return "NINTENDO";
+    case LAYOUT_XBOX:     return "XBOX";
+    case LAYOUT_SWAP_AB:  return "SWAP_AB";
+    case LAYOUT_SWAP_XY:  return "SWAP_XY";
+    case LAYOUT_CUSTOM:   return "CUSTOM";
+    default:              return "DEFAULT";
+    }
+}
+
+static void parse_custom_map(struct pad *p, const char *str)
+{
+    memset(p->custom_map, 0, sizeof(p->custom_map));
+    if (!str) return;
+    const char *ptr = str;
+    if (strncasecmp(ptr, "CUSTOM:", 7) == 0) ptr += 7;
+    else if (strncasecmp(ptr, "CUSTOM", 6) == 0) ptr += 6;
+    while (*ptr == ' ' || *ptr == ':' || *ptr == ',') ptr++;
+    while (*ptr) {
+        int from = 0, to = 0, n = 0;
+        if (sscanf(ptr, "%i->%i%n", &from, &to, &n) == 2 ||
+            sscanf(ptr, "%i:%i%n", &from, &to, &n) == 2 ||
+            sscanf(ptr, "%i=%i%n", &from, &to, &n) == 2) {
+            if (from > 0 && from < KEY_MAX && to > 0 && to < KEY_MAX) {
+                p->custom_map[from] = (unsigned short)to;
+            }
+            ptr += n;
+            while (*ptr == ',' || *ptr == ' ' || *ptr == ';') ptr++;
+        } else {
+            break;
+        }
+    }
+}
+
+static void format_custom_map(const struct pad *p, char *out, size_t maxlen)
+{
+    size_t len = 0;
+    out[0] = 0;
+    int first = 1;
+    int k;
+    for (k = 0; k < KEY_MAX; k++) {
+        if (p->custom_map[k]) {
+            int written = snprintf(out + len, (len < maxlen ? maxlen - len : 0),
+                                   "%s%d->%d", first ? "" : ",", k, p->custom_map[k]);
+            if (written > 0 && len + (size_t)written < maxlen) {
+                len += (size_t)written;
+            }
+            first = 0;
+        }
+    }
+}
+
+static void load_pad_layout(struct pad *p)
+{
+    FILE *f = fopen(LAYOUTS_PATH, "r");
+    char line[512];
+    p->layout = LAYOUT_DEFAULT;
+    memset(p->custom_map, 0, sizeof(p->custom_map));
+    if (!f) return;
+
+    while (fgets(line, sizeof(line), f)) {
+        char *s = line;
+        while (*s == ' ' || *s == '\t') s++;
+        if (*s == '#' || *s == '\n' || *s == '\0') continue;
+        char *eq = strchr(s, '=');
+        if (!eq) continue;
+        *eq = '\0';
+        char *key = s;
+        char *val = eq + 1;
+        char *end = key + strlen(key) - 1;
+        while (end >= key && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) {
+            *end = '\0';
+            end--;
+        }
+        while (*val == ' ' || *val == '\t') val++;
+        end = val + strlen(val) - 1;
+        while (end >= val && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) {
+            *end = '\0';
+            end--;
+        }
+        if (strcmp(key, p->name) == 0) {
+            if (strncasecmp(val, "CUSTOM", 6) == 0) {
+                p->layout = LAYOUT_CUSTOM;
+                parse_custom_map(p, val);
+            } else {
+                p->layout = parse_layout_mode(val);
+                memset(p->custom_map, 0, sizeof(p->custom_map));
+            }
+            logmsg("loaded saved layout %s for pad \"%s\"", layout_mode_str(p->layout), p->name);
+            break;
+        }
+    }
+    fclose(f);
+}
+
+static void save_pad_layout(const char *name, const char *val)
+{
+    FILE *f = fopen(LAYOUTS_PATH, "r");
+    char **lines = NULL;
+    int nlines = 0, cap = 0;
+    int matched = 0;
+    char newline[512];
+    snprintf(newline, sizeof(newline), "%s=%s\n", name, val);
+
+    if (f) {
+        char buf[512];
+        while (fgets(buf, sizeof(buf), f)) {
+            char tmp[512];
+            snprintf(tmp, sizeof(tmp), "%s", buf);
+            char *s = tmp;
+            while (*s == ' ' || *s == '\t') s++;
+            if (*s != '#' && *s != '\n' && *s != '\0') {
+                char *eq = strchr(s, '=');
+                if (eq) {
+                    *eq = '\0';
+                    char *key = s;
+                    char *end = key + strlen(key) - 1;
+                    while (end >= key && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) {
+                        *end = '\0';
+                        end--;
+                    }
+                    if (strcmp(key, name) == 0) {
+                        if (nlines >= cap) {
+                            cap = cap ? cap * 2 : 16;
+                            lines = realloc(lines, cap * sizeof(char *));
+                        }
+                        lines[nlines++] = strdup(newline);
+                        matched = 1;
+                        continue;
+                    }
+                }
+            }
+            if (nlines >= cap) {
+                cap = cap ? cap * 2 : 16;
+                lines = realloc(lines, cap * sizeof(char *));
+            }
+            lines[nlines++] = strdup(buf);
+        }
+        fclose(f);
+    }
+
+    if (!matched) {
+        if (nlines >= cap) {
+            cap = cap ? cap * 2 : 16;
+            lines = realloc(lines, cap * sizeof(char *));
+        }
+        lines[nlines++] = strdup(newline);
+    }
+
+    char tmppath[256];
+    snprintf(tmppath, sizeof(tmppath), "%s.tmp", LAYOUTS_PATH);
+    FILE *out = fopen(tmppath, "w");
+    if (out) {
+        int i;
+        if (nlines == 1 && !matched) {
+            fprintf(out, "# Fusion Controller - persistent pad layout configurations\n");
+            fprintf(out, "# Format: <pad_name>=<layout_or_mapping>\n");
+        }
+        for (i = 0; i < nlines; i++) {
+            fputs(lines[i], out);
+        }
+        fflush(out);
+        int fd = fileno(out);
+        if (fd >= 0) fsync(fd);
+        fclose(out);
+        rename(tmppath, LAYOUTS_PATH);
+        chmod(LAYOUTS_PATH, 0644);
+        logmsg("saved layout for \"%s\" -> %s to %s", name, val, LAYOUTS_PATH);
+    } else {
+        logmsg("ERROR: failed to write %s: %s", tmppath, strerror(errno));
+    }
+
+    if (lines) {
+        int i;
+        for (i = 0; i < nlines; i++) free(lines[i]);
+        free(lines);
+    }
 }
 
 /* ------------------------------------------------- fusion axis capabilities */
@@ -740,7 +953,7 @@ static void add_pad(const char *path, const char *node)
     p->fd = fd;
     snprintf(p->node, sizeof p->node, "%s", node);
     snprintf(p->name, sizeof p->name, "%s", name);
-    p->layout = LAYOUT_DEFAULT;
+    load_pad_layout(p);
     fill_axes(fd, p);
 
     p->ff_supported = 0;
@@ -986,8 +1199,8 @@ static void sock_handle_client(int slot)
     buf[r] = 0;
 
     for (line = strtok_r(buf, "\r\n", &saveptr); line; line = strtok_r(NULL, "\r\n", &saveptr)) {
-        char cmd[64], arg1[64], arg2[64];
-        int n = sscanf(line, "%63s %63s %63s", cmd, arg1, arg2);
+        char cmd[64], arg1[64], arg2[256];
+        int n = sscanf(line, "%63s %63s %255s", cmd, arg1, arg2);
 
         if (n == 2 && strcmp(cmd, "HIDE") == 0) {
             logmsg("HIDE %s from uid=%d pid=%d", arg1, client_uid[slot], client_pid[slot]);
@@ -1003,18 +1216,29 @@ static void sock_handle_client(int slot)
         }
         else if (n == 3 && strcmp(cmd, "LAYOUT") == 0) {
             int idx = atoi(arg1);
-            enum layout_mode mode = LAYOUT_DEFAULT;
-            if (strcmp(arg2, "NINTENDO") == 0) mode = LAYOUT_NINTENDO;
-            else if (strcmp(arg2, "XBOX") == 0) mode = LAYOUT_XBOX;
-            else if (strcmp(arg2, "DEFAULT") != 0) {
-                dprintf(cfd, "ERROR unknown layout mode\n");
-                continue;
-            }
+            enum layout_mode mode = parse_layout_mode(arg2);
             if (idx >= 0 && idx < npads) {
+                release_pad_keys(idx);
                 pads[idx].layout = mode;
-                logmsg("pad %d layout -> %s (uid=%d pid=%d)", idx, arg2,
-                       client_uid[slot], client_pid[slot]);
-                dprintf(cfd, "OK LAYOUT %d %s\n", idx, arg2);
+                memset(pads[idx].custom_map, 0, sizeof(pads[idx].custom_map));
+                save_pad_layout(pads[idx].name, layout_mode_str(mode));
+                logmsg("pad %d layout -> %s (saved for \"%s\")", idx, layout_mode_str(mode), pads[idx].name);
+                dprintf(cfd, "OK LAYOUT %d %s\n", idx, layout_mode_str(mode));
+            } else {
+                dprintf(cfd, "ERROR pad index out of range\n");
+            }
+        }
+        else if (n == 3 && strcmp(cmd, "REMAP") == 0) {
+            int idx = atoi(arg1);
+            if (idx >= 0 && idx < npads) {
+                release_pad_keys(idx);
+                pads[idx].layout = LAYOUT_CUSTOM;
+                parse_custom_map(&pads[idx], arg2);
+                char custom_val[300];
+                snprintf(custom_val, sizeof(custom_val), "CUSTOM:%s", arg2);
+                save_pad_layout(pads[idx].name, custom_val);
+                logmsg("pad %d custom remap -> %s (saved for \"%s\")", idx, arg2, pads[idx].name);
+                dprintf(cfd, "OK REMAP %d %s\n", idx, arg2);
             } else {
                 dprintf(cfd, "ERROR pad index out of range\n");
             }
@@ -1024,17 +1248,17 @@ static void sock_handle_client(int slot)
             dprintf(cfd, "{\"hide_mode\":%d,\"npads\":%d,\"evtx\":%llu,\"efail\":%llu,\"pads\":[",
                     hide_mode, npads, evtx_count, evtx_fail);
             for (i = 0; i < npads; i++) {
-                const char *lstr = "DEFAULT";
-                if (pads[i].layout == LAYOUT_NINTENDO) lstr = "NINTENDO";
-                else if (pads[i].layout == LAYOUT_XBOX) lstr = "XBOX";
+                const char *lstr = layout_mode_str(pads[i].layout);
                 char routes[80]; int r, rn = 0;
-            routes[0] = 0;
-            for (r = 0; r < ABS_CNT; r++)
-                if (pads[i].out_code[r] >= 0 && pads[i].out_code[r] != r)
-                    rn += snprintf(routes + rn, sizeof routes - rn, "%s%d>%d",
-                                   rn ? "," : "", r, pads[i].out_code[r]);
-            dprintf(cfd, "%s{\"idx\":%d,\"name\":\"%s\",\"node\":\"%s\",\"hidden\":%d,\"layout\":\"%s\",\"routes\":\"%s\"}",
-                        i ? "," : "", i, pads[i].name, pads[i].node, pads[i].hidden, lstr, routes);
+                routes[0] = 0;
+                for (r = 0; r < ABS_CNT; r++)
+                    if (pads[i].out_code[r] >= 0 && pads[i].out_code[r] != r)
+                        rn += snprintf(routes + rn, sizeof routes - rn, "%s%d>%d",
+                                       rn ? "," : "", r, pads[i].out_code[r]);
+                char custom_str[256];
+                format_custom_map(&pads[i], custom_str, sizeof(custom_str));
+                dprintf(cfd, "%s{\"idx\":%d,\"name\":\"%s\",\"node\":\"%s\",\"hidden\":%d,\"layout\":\"%s\",\"custom\":\"%s\",\"routes\":\"%s\"}",
+                            i ? "," : "", i, pads[i].name, pads[i].node, pads[i].hidden, lstr, custom_str, routes);
             }
             dprintf(cfd, "]}\n");
         }
@@ -1251,9 +1475,10 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--no-rumble"))   rumble_on = 0;
         else if (!strcmp(argv[i], "--debug"))       debug = 1;
         else if (!strncmp(argv[i], "--map=", 6))    MAP_PATH = argv[i] + 6;
+        else if (!strncmp(argv[i], "--layouts=", 10)) LAYOUTS_PATH = argv[i] + 10;
         else {
             fprintf(stderr, "usage: fusiond [--name=NAME] [--hide] [--no-hide] [--no-rumble] "
-                            "[--debug] [--map=FILE] [--version]\n");
+                            "[--debug] [--map=FILE] [--layouts=FILE] [--version]\n");
             return 2;
         }
     }
