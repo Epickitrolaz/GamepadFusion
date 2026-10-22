@@ -52,7 +52,7 @@
 #define BTN_TRIGGER_HAPPY24 (BTN_TRIGGER_HAPPY1 + 23)
 #endif
 
-#define VERSION     "2.4.1"
+#define VERSION     "2.5.0"
 #define MAX_PADS    16
 #define MAX_USER_MAP 256
 #define FF_SLOTS    16
