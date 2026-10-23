@@ -12,32 +12,23 @@ import java.util.concurrent.Executors;
 /**
  * Quick Settings tile: tap to toggle hide mode (grab physical pads / Fusion-only).
  *
- * su round-trips run on a background executor; tile updates are posted back to
- * the main thread so SystemUI is never blocked. While the tile is listening
- * (QS shade open) it re-polls the daemon every second, so profile switches made
- * by the per-app monitor show up immediately instead of whenever SystemUI
- * next decides to rebind the service.
+ * State is fetched when the shade opens (onStartListening) and after a toggle -
+ * which is exactly when the tile is visible, so it is always fresh for the user.
+ *
+ * Do NOT add a timer that re-polls the daemon. Every status query costs one su
+ * round-trip, and Magisk audit-logs each of those by spawning
+ * `app_process com.android.commands.content.Content`. On ROMs whose boot
+ * classpath lacks that class, every single su call aborts with
+ * "ClassNotFoundException: com.android.commands.content.Content" and dumps a
+ * SIGABRT tombstone into logcat. The old 1s poll therefore produced a crash
+ * log every second (see logcat.log); the tile is refresh-on-open because of it.
  */
 public class FusionTile extends TileService {
 
-    private static final long POLL_MS = 1000;
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    private boolean listening = false;
-    private boolean querying = false;
-
-    private final Runnable tick = this::poll;
-
-    @Override public void onStartListening() {
-        listening = true;
-        poll();          // immediate first state, then scheduled refreshes
-    }
-
-    @Override public void onStopListening() {
-        listening = false;
-        main.removeCallbacks(tick);
-    }
+    @Override public void onStartListening() { queryOnce(); }
 
     @Override public void onTileAdded() { queryOnce(); }
 
@@ -45,41 +36,27 @@ public class FusionTile extends TileService {
 
     /** One su round-trip, result applied on the main thread. */
     private void queryOnce() {
-        final Tile t = getQsTile();
-        if (t == null) return;
-        if (querying) {
-            // a query is already queued/running - try again on the next tick
-            // (always reschedule, or the polling loop would die here)
-            if (listening) main.postDelayed(tick, POLL_MS);
-            return;
-        }
-        querying = true;
+        if (getQsTile() == null) return;
         EXEC.execute(() -> {
             final String out = Su.run("/data/adb/fusionctl status");
-            main.post(() -> { querying = false; apply(out); });
+            main.post(() -> apply(out));
         });
-    }
-
-    private void poll() {
-        if (listening) queryOnce();
     }
 
     private void apply(String out) {
         Tile t = getQsTile();
-        if (t != null) {
-            if (out.contains("\"hide_mode\":1")) {
-                t.setState(Tile.STATE_ACTIVE);
-                subtitle(t, "pads grabbed - Fusion only");
-            } else if (out.contains("\"hide_mode\":0")) {
-                t.setState(Tile.STATE_INACTIVE);
-                subtitle(t, "physical pads visible");
-            } else {
-                t.setState(Tile.STATE_UNAVAILABLE);
-                subtitle(t, "daemon offline");
-            }
-            t.updateTile();
+        if (t == null) return;
+        if (out.contains("\"hide_mode\":1")) {
+            t.setState(Tile.STATE_ACTIVE);
+            subtitle(t, "pads grabbed - Fusion only");
+        } else if (out.contains("\"hide_mode\":0")) {
+            t.setState(Tile.STATE_INACTIVE);
+            subtitle(t, "physical pads visible");
+        } else {
+            t.setState(Tile.STATE_UNAVAILABLE);
+            subtitle(t, "daemon offline");
         }
-        if (listening) main.postDelayed(tick, POLL_MS);
+        t.updateTile();
     }
 
     private void toggle() {
@@ -88,6 +65,7 @@ public class FusionTile extends TileService {
         boolean on = t.getState() == Tile.STATE_ACTIVE;
         subtitle(t, "switching\u2026");
         t.updateTile();
+        // single-thread executor, so the hide lands before the status query
         EXEC.execute(() -> Su.run("/data/adb/fusionctl hide " + (on ? "off" : "on")));
         queryOnce();
     }
