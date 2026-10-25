@@ -27,7 +27,12 @@ log() { echo "$(date) monitor: $1" >> "$LOG"; }
 send() { echo "$1" | timeout 3 nc -U "$SOCK" >/dev/null 2>&1; }
 
 pkg_of() {
-  timeout 5 dumpsys window 2>/dev/null | grep -m1 -E 'mCurrentFocus|mFocusedApp' \
+  out=$(timeout 2 dumpsys window displays 2>/dev/null)
+  case "$out" in
+    *mCurrentFocus*|*mFocusedApp*) ;;
+    *) out=$(timeout 3 dumpsys window 2>/dev/null) ;;
+  esac
+  echo "$out" | grep -m1 -E 'mCurrentFocus|mFocusedApp' \
     | sed -n 's/.* u[0-9]* \([^ }]*\).*/\1/p' | tr -d ' \r'
 }
 
